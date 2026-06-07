@@ -146,9 +146,19 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         snapshot = run_scan()
         cycle_id = snapshot["cycle_id"]
         slot = time_slot()
+
+        # 前サイクルの介入が効いたかを検証(actions.logにverifyレコード追記)
+        from .verify import verify_interventions
+        verify_results = verify_interventions(snapshot)
+        if verify_results:
+            print(f"🔍 前回介入の検証: " +
+                  ", ".join(f"{r['tty']}={r['result']}" for r in verify_results),
+                  file=sys.stderr)
+
         pending = [i for i in load_pending().get("items", []) if i["status"] == "open"]
         recent = [
-            {k: r.get(k) for k in ("ts", "cycle_id", "tool", "tty", "reason", "result")}
+            {k: r.get(k) for k in ("ts", "cycle_id", "tool", "tty", "reason",
+                                   "result", "target_tool", "target_ts")}
             for r in read_actions(hours=24)
         ]
         prompt = build_brain_prompt(snapshot, pending, recent, slot, dry_run=dry_run)

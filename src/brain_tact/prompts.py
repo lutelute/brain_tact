@@ -95,7 +95,7 @@ def build_brain_prompt(
    - 必ずdefer: rm -rf や大量削除 / git push(特に--force) / sudo / プロジェクト外への書き込み / デプロイ・外部送信・課金が絡むもの / 秘密情報を扱うもの / 設計判断そのもの
    - 「don't ask again」系の選択肢があっても常に単発承認("1")を選ぶ
 4. IDLE(放置)への標準メッセージ例: 「定時巡回です。現在の進捗を3行で要約し、残作業が明確なら続行してください。判断が必要な点があれば箇条書きで止めておいてください」
-5. データ2の記録で同じttyに過去2回以上act_send済みなのに進展がない場合は、もう突かず defer する(3ストライク)
+5. データ2の tool="verify" は過去の介入の効果検証結果(reactivated=効いた / no_change=不発 / worse=悪化)。同じttyへの介入で no_change が2件以上あれば、もう突かず defer する(3ストライク)。不発だった介入と同じ文面を繰り返さない
 6. ERROR_RETRYING は自動回復を待つ(報告のみ)。LIMIT_REACHED は介入せず defer(kind=limit)
 7. DEAD_SHELL は act_resume で復元する(クールダウン拒否されたら defer kind=dead)
 8. state_hint はPythonの機械推定にすぎない。screen_tail の生テキストと矛盾したら生テキストを信じる
