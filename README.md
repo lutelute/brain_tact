@@ -58,7 +58,23 @@ uv run brain-tact install --skill     # /brainスキルを ~/.claude/skills/ へ
 | `brain-tact cycle [--force] [--dry-run] [--model X]` | 巡回サイクル実行 |
 | `brain-tact pending [list\|resolve <id> --note N]` | 保留リスト操作 |
 | `brain-tact log [--tail N]` | 脳のアクション監査ログ |
+| `brain-tact doctor` | 環境・権限・直近サイクルの自己診断 |
+| `brain-tact stats [--days N]` | KPI(介入成功率・稼働率推移) |
 | `brain-tact install [--launchd] [--skill] [--dry-run]` | インストール |
+
+## 攻めモード(誰もサボらせない)
+
+usage(Claude利用枠、ccusage計測)が**50%未満**のとき:
+
+- 残作業のないIDLEセッションに「改善候補を3つ提案し、最有力に着手して」を送る
+- **読書係**(読み取り専用ヘッドレスclaude)が、セッションの開いていない放置プロジェクト(~/Documents/GitHub を2階層走査、7日ローテーション)を読み直し、現状+次の一手3案を生成
+- 結果はLINEレポートの「💡提案」としてホウレンソウ(push数は増やさない)
+
+## 閉ループ(入力した→効いたか)
+
+介入は次サイクルで自動検証され(`verify`: reactivated/no_change/worse)、
+連続2回不発のセッションへの送信はactuatorが拒否(3ストライク)。
+効果はLINEレポートの「🔍前回介入の効果」と `brain-tact stats` で確認できる。
 
 ## /brain スキル
 
