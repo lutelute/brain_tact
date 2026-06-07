@@ -67,6 +67,16 @@ def cmd_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stats(args: argparse.Namespace) -> int:
+    from .stats import compute_stats, format_stats
+    s = compute_stats(days=args.days)
+    if args.json:
+        print(json.dumps(s, ensure_ascii=False, indent=1))
+    else:
+        print(format_stats(s))
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .doctor import format_doctor, run_doctor
     checks = run_doctor()
@@ -115,6 +125,11 @@ def main(argv: list[str] | None = None) -> int:
 
     dp = sub.add_parser("doctor", help="環境・依存・権限の自己診断")
     dp.set_defaults(func=cmd_doctor)
+
+    tp = sub.add_parser("stats", help="KPI集計(介入成功率・稼働率推移)")
+    tp.add_argument("--days", type=float, default=7.0)
+    tp.add_argument("--json", action="store_true")
+    tp.set_defaults(func=cmd_stats)
 
     ip = sub.add_parser("install", help="launchd plist / /brainスキルのインストール")
     ip.add_argument("--launchd", action="store_true")
