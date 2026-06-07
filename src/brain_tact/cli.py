@@ -67,6 +67,13 @@ def cmd_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from .doctor import format_doctor, run_doctor
+    checks = run_doctor()
+    print(format_doctor(checks))
+    return 0 if all(c["ok"] for c in checks) else 1
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     from .install import install_launchd, install_skill
     rc = 0
@@ -105,6 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     lp = sub.add_parser("log", help="脳のアクション記録を表示")
     lp.add_argument("--tail", type=int, default=30)
     lp.set_defaults(func=cmd_log)
+
+    dp = sub.add_parser("doctor", help="環境・依存・権限の自己診断")
+    dp.set_defaults(func=cmd_doctor)
 
     ip = sub.add_parser("install", help="launchd plist / /brainスキルのインストール")
     ip.add_argument("--launchd", action="store_true")
