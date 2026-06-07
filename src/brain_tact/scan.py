@@ -7,7 +7,7 @@ from datetime import datetime
 from . import HISTORY_DIR, LATEST_JSON, ensure_dirs
 from .classify import classify
 from .procs import find_claude_processes
-from .sessions import attach_sessions
+from .sessions import attach_sessions, read_last_assistant_text
 from .terminal import capture_all_tabs
 
 # 脳に渡す画面末尾の行数(空行除去後)
@@ -104,6 +104,11 @@ def run_scan(quick: bool = False) -> dict:
             "screen_hash": h,
             "jsonl_mtime": jsonl_mtime,
             "progress": compute_progress(h, jsonl_mtime, prev),
+            # 要注意セッションのみ: 画面で折りたたまれたClaudeの最終発言を添付
+            "last_assistant": (
+                read_last_assistant_text(info.jsonl_path)
+                if cls.attention and info and info.jsonl_path else None
+            ),
             "screen_tail": screen_tail,
         })
 

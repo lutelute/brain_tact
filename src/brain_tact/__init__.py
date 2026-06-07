@@ -5,6 +5,7 @@
 """
 
 import os
+import shutil
 from pathlib import Path
 
 # プロジェクトルート(src/brain_tact/__init__.py → ../../..)
@@ -35,3 +36,14 @@ def ensure_dirs() -> None:
     """state系ディレクトリを作成する(冪等)。"""
     for d in (STATE_DIR, HISTORY_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+
+def claude_bin() -> str:
+    """claude CLIの実体パス(launchd環境のPATH細りに備えフォールバック付き)。"""
+    found = shutil.which("claude")
+    if found:
+        return found
+    default = os.path.expanduser("~/.local/bin/claude")
+    if os.path.exists(default):
+        return default
+    raise FileNotFoundError("claude CLIが見つかりません")

@@ -8,12 +8,48 @@ jsonlのmtimeは「ツール結果のたびにappendされる」ため、画面�
 独立した『実際に進捗しているか』のシグナルとして使える。
 """
 
+import json
 import re
 import time
 from dataclasses import dataclass
 
 from . import CLAUDE_PROJECTS
 from .procs import ClaudeProc
+
+TAIL_READ_BYTES = 65536
+
+
+def read_last_assistant_text(jsonl_path: str, max_chars: int = 240) -> str | None:
+    """jsonl末尾からClaudeの最後のテキスト発言を抜粋する。
+
+    画面で折りたたまれて見えない「直前に何を言っていたか」(完了報告・質問など)
+    を脳に渡すため。tool_useだけの行はスキップしてテキストを遡る。
+    """
+    try:
+        with open(jsonl_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - TAIL_READ_BYTES))
+            chunk = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    lines = chunk.splitlines()
+    if size > TAIL_READ_BYTES and lines:
+        lines = lines[1:]  # 先頭行は途中から始まっている可能性があるため捨てる
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") != "assistant":
+            continue
+        content = (rec.get("message") or {}).get("content") or []
+        texts = [b.get("text", "") for b in content
+                 if isinstance(b, dict) and b.get("type") == "text"]
+        text = " ".join(" ".join(t.split()) for t in texts if t.strip())
+        if text:
+            return text[:max_chars] + ("…" if len(text) > max_chars else "")
+    return None
 
 
 @dataclass

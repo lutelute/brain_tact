@@ -60,9 +60,12 @@ def build_brain_prompt(
     recent_actions: list[dict],
     slot: str,
     dry_run: bool = False,
+    review: dict | None = None,
 ) -> str:
     s = SLOTS[slot]
     now = datetime.now()
+    review_json = (json.dumps(review, ensure_ascii=False, indent=1)
+                   if review else "(今回の読書係レポートはなし)")
     if dry_run:
         report_step = (
             "5. LINE送信ツールは今回はありません。代わりにLINEレポートの本文を"
@@ -104,6 +107,7 @@ def build_brain_prompt(
 11. あなたの役割は進行管理であり、新しい作業の発案ではない。指示は控えめに、安全側に倒す
 12. ambiguous_session=true のセッションは活動時刻の推定が不確実。介入判断は screen_tail を優先する
 13. progress.stagnant_cycles はスキャン間で画面・jsonlに変化がなかった連続回数。2以上=半日近く完全停滞の客観シグナル(IDLEの放置判定・3ストライク判断に使う)。RUNNINGなのにstagnant_cycles>=2は異常(ハング疑い)として報告する
+14. last_assistant はそのセッションのClaudeの最後のテキスト発言の抜粋(画面で折りたたまれて見えない文脈)。「完了報告か・質問か・作業途中か」の判断材料として screen_tail と併読する
 
 ## 巡回手順
 0. 【疎通確認】最初に brain-actuator の get_pending ツールを1回呼び、ツールが使えることを確認する。もし brain-actuator のツールが1つも利用できない場合は、何も判断・出力せず「MCP_LOAD_FAILURE」とだけ出力して即終了すること(システムが自動リトライする)
@@ -117,8 +121,16 @@ def build_brain_prompt(
 🧠 brain {s["emoji"]} {now.strftime("%m/%d %H:%M")}
 稼働n 待機n 介入n 保留n
 ▶ 介入: project: 何をしたか(1行ずつ、なければ「介入なし」)
+🔍 前回介入の効果: 効果n/不発n(データ2のverifyから集計。検証対象が無ければ省略)
 ⏸ 保留: n. project: 何の判断が必要か(1行ずつ、なければ省略)
+💡 提案: 読書係の報告要点(データ4があるときのみ、2行まで)
 保留が1件以上あれば末尾に「→ 手元のClaude Codeで /brain」
+
+## 攻めモード(usage余力の活用 — 誰もサボらせない)
+データ3の totals.usage.pct はClaude利用枠の消費率(現5時間ブロック、過去最大比)。**50未満なら余力がある**:
+- IDLE(放置)で残作業が無い・完了済みのセッションには、通常の標準メッセージの代わりに「進捗を3行で要約。残作業があれば続行。残作業が無ければ、このプロジェクトの改善候補を3つ提案し、最も価値が高いものに自分で着手して」を送る(行動規範2のage保護・クールダウンは通常通り適用)
+- データ4に読書係のプロジェクト報告があれば、要点(プロジェクト名+上位提案1〜2)をLINEレポートの「💡提案」に含めてホウレンソウする
+usage.pct >= 50 または不明(null)のときは守りの運用(従来通り)。無理に仕事を作らない。
 
 ## 今回の巡回の重点({s["desc"]})
 {s["focus"]}
@@ -137,5 +149,10 @@ def build_brain_prompt(
 ## データ3: スナップショット(全セッション、{snapshot["totals"]["tabs"]}タブ)
 ```json
 {json.dumps(snapshot, ensure_ascii=False, indent=1)}
+```
+
+## データ4: 読書係のプロジェクト報告(放置プロジェクトの読み直し)
+```json
+{review_json}
 ```
 """

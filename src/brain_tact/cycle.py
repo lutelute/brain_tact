@@ -12,7 +12,14 @@ import sys
 import time
 from datetime import datetime
 
-from . import BRAIN_DIR, CYCLE_LOG, MCP_BRAIN_DRY_JSON, MCP_BRAIN_JSON, ensure_dirs
+from . import (
+    BRAIN_DIR,
+    CYCLE_LOG,
+    MCP_BRAIN_DRY_JSON,
+    MCP_BRAIN_JSON,
+    claude_bin,
+    ensure_dirs,
+)
 from .prompts import build_brain_prompt, time_slot
 from .scan import run_scan
 from .state import (
@@ -31,14 +38,8 @@ FALLBACK_TIMEOUT_SEC = 120
 MAX_BUDGET_USD = "3"
 
 
-def _claude_bin() -> str:
-    found = shutil.which("claude")
-    if found:
-        return found
-    default = os.path.expanduser("~/.local/bin/claude")
-    if os.path.exists(default):
-        return default
-    raise FileNotFoundError("claude CLIが見つかりません")
+# 後方互換エイリアス(実体は __init__.claude_bin)
+_claude_bin = claude_bin
 
 
 def _log_cycle(record: dict) -> None:
@@ -155,13 +156,24 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
                   ", ".join(f"{r['tty']}={r['result']}" for r in verify_results),
                   file=sys.stderr)
 
+        # 攻めモード: usage<50%なら読書係が放置プロジェクトを読み直す
+        # (ホウレンソウ材料。dry-runではコスト節約のためスキップ)
+        review_note = None
+        if not dry_run:
+            from .review import maybe_review
+            review_note = maybe_review(snapshot)
+            if review_note:
+                print(f"📖 読書係: {review_note['project']} を読み直しました",
+                      file=sys.stderr)
+
         pending = [i for i in load_pending().get("items", []) if i["status"] == "open"]
         recent = [
             {k: r.get(k) for k in ("ts", "cycle_id", "tool", "tty", "reason",
                                    "result", "target_tool", "target_ts")}
             for r in read_actions(hours=24)
         ]
-        prompt = build_brain_prompt(snapshot, pending, recent, slot, dry_run=dry_run)
+        prompt = build_brain_prompt(snapshot, pending, recent, slot,
+                                    dry_run=dry_run, review=review_note)
 
         print(f"🧠 {slot} 巡回開始 cycle={cycle_id} タブ{snapshot['totals']['tabs']} "
               f"(dry_run={dry_run}, model={model})", file=sys.stderr)
