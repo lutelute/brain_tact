@@ -111,6 +111,12 @@ def run_scan(quick: bool = False) -> dict:
     for r in records:
         by_state[r["state_hint"]] = by_state.get(r["state_hint"], 0) + 1
 
+    # quickスキャン(/brainの鮮度更新)ではccusage呼び出しを省く
+    usage = None
+    if not quick:
+        from .usage import current_usage
+        usage = current_usage()
+
     snapshot = {
         "taken_at": now.isoformat(timespec="seconds"),
         "cycle_id": cycle_id,
@@ -118,6 +124,7 @@ def run_scan(quick: bool = False) -> dict:
             "tabs": len(records),
             "claude": sum(1 for r in records if r["has_claude"]),
             "by_state": by_state,
+            "usage": usage,
         },
         "sessions": records,
     }
