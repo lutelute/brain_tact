@@ -1,0 +1,4 @@
+Last login: Sun Jun  8 01:50:12 on ttys011
+shigenoburyuto@MacBook-Pro ~ % ls
+Applications  Desktop  Documents  Downloads
+shigenoburyuto@MacBook-Pro ~ %

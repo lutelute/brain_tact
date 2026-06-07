@@ -1,0 +1,212 @@
+"""定時サイクルの実行 — lock→debounce→scan→脳(claude -p)→記録。
+
+launchdから brain-cycle.sh 経由で呼ばれる実体。macOSには timeout コマンドが
+無いため、claude -p の暴走対策は subprocess.run(timeout=) で行う。
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+from . import BRAIN_DIR, CYCLE_LOG, MCP_BRAIN_DRY_JSON, MCP_BRAIN_JSON, ensure_dirs
+from .prompts import build_brain_prompt, time_slot
+from .scan import run_scan
+from .state import (
+    acquire_cycle_lock,
+    expire_pending,
+    load_pending,
+    mark_cycle_success,
+    prune_history,
+    read_actions,
+    release_cycle_lock,
+    should_debounce,
+)
+
+BRAIN_TIMEOUT_SEC = 900          # 15分でSIGKILL
+FALLBACK_TIMEOUT_SEC = 120
+MAX_BUDGET_USD = "3"
+
+
+def _claude_bin() -> str:
+    found = shutil.which("claude")
+    if found:
+        return found
+    default = os.path.expanduser("~/.local/bin/claude")
+    if os.path.exists(default):
+        return default
+    raise FileNotFoundError("claude CLIが見つかりません")
+
+
+def _log_cycle(record: dict) -> None:
+    ensure_dirs()
+    record.setdefault("ts", datetime.now().astimezone().isoformat(timespec="seconds"))
+    with open(CYCLE_LOG, "a") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _run_brain(prompt: str, cycle_id: str, model: str, dry_run: bool) -> dict:
+    """claude -p(脳)を起動して結果dictを返す。"""
+    # dry-run時はline-bridgeを外した構成にする(本物のLINE pushを防ぐ)
+    mcp_config = MCP_BRAIN_DRY_JSON if dry_run else MCP_BRAIN_JSON
+    cmd = [
+        _claude_bin(), "-p",
+        "--output-format", "json",
+        "--model", model,
+        "--fallback-model", "haiku",
+        "--dangerously-skip-permissions",
+        "--strict-mcp-config",
+        "--mcp-config", str(mcp_config),
+        "--tools", "",
+        "--max-budget-usd", MAX_BUDGET_USD,
+    ]
+    env = dict(os.environ)
+    env["BRAIN_CYCLE_ID"] = cycle_id
+    # 全セッション稼働中などの高負荷時、MCPサーバー(uv run×2)の起動が遅れて
+    # 接続タイムアウト→ツールなしで脳が走る事故が実際に起きた。猶予を延ばす
+    env["MCP_TIMEOUT"] = "60000"
+    env["MCP_TOOL_TIMEOUT"] = "120000"
+    if dry_run:
+        env["BRAIN_DRY_RUN"] = "1"
+    else:
+        env.pop("BRAIN_DRY_RUN", None)
+
+    proc = subprocess.run(
+        cmd, input=prompt, capture_output=True, text=True,
+        timeout=BRAIN_TIMEOUT_SEC, env=env, cwd=BRAIN_DIR,
+    )
+    out: dict = {"returncode": proc.returncode}
+    try:
+        parsed = json.loads(proc.stdout)
+        out["result_text"] = parsed.get("result", "")
+        out["cost_usd"] = parsed.get("total_cost_usd")
+        out["num_turns"] = parsed.get("num_turns")
+        out["is_error"] = parsed.get("is_error", proc.returncode != 0)
+    except json.JSONDecodeError:
+        out["result_text"] = proc.stdout[-2000:]
+        out["is_error"] = proc.returncode != 0
+    if proc.returncode != 0:
+        out["stderr"] = proc.stderr[-1000:]
+    return out
+
+
+def fallback_notify(error: str) -> None:
+    """サイクル失敗をLINEに一報する(極小の脳)。これも失敗したらログのみ。"""
+    try:
+        prompt = (
+            "line-bridge の send_text ツールで次のメッセージをそのまま送信して: "
+            f"🧠⚠️ brainサイクル失敗 {datetime.now().strftime('%m/%d %H:%M')} — "
+            f"{error[:200]} (詳細: state/cycle.log)"
+        )
+        subprocess.run(
+            [
+                _claude_bin(), "-p",
+                "--model", "haiku",
+                "--dangerously-skip-permissions",
+                "--strict-mcp-config", "--mcp-config", str(MCP_BRAIN_JSON),
+                "--tools", "",
+                "--max-budget-usd", "0.2",
+            ],
+            input=prompt, capture_output=True, text=True,
+            timeout=FALLBACK_TIMEOUT_SEC, cwd=BRAIN_DIR,
+        )
+    except Exception as e:  # noqa: BLE001 — 一報の失敗は握りつぶしてログへ
+        _log_cycle({"event": "fallback_notify_failed", "error": str(e)})
+
+
+def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet") -> int:
+    ensure_dirs()
+    started = datetime.now()
+
+    if not acquire_cycle_lock():
+        _log_cycle({"event": "skipped", "why": "lock held(別サイクル実行中)"})
+        print("⏭️  別サイクルが実行中(lock)。スキップします", file=sys.stderr)
+        return 0
+
+    caffeinate = None
+    try:
+        if should_debounce() and not force:
+            _log_cycle({"event": "skipped", "why": "debounce(前回成功から3時間未満)"})
+            print("⏭️  前回成功から3時間未満。--force で強制実行できます", file=sys.stderr)
+            return 0
+
+        # サイクル中のアイドルスリープを抑止(自PID終了で自動解除)
+        try:
+            caffeinate = subprocess.Popen(["caffeinate", "-w", str(os.getpid())])
+        except FileNotFoundError:
+            pass
+
+        # ハウスキーピング
+        n_exp = expire_pending()
+        n_pru = prune_history()
+
+        snapshot = run_scan()
+        cycle_id = snapshot["cycle_id"]
+        slot = time_slot()
+        pending = [i for i in load_pending().get("items", []) if i["status"] == "open"]
+        recent = [
+            {k: r.get(k) for k in ("ts", "cycle_id", "tool", "tty", "reason", "result")}
+            for r in read_actions(hours=24)
+        ]
+        prompt = build_brain_prompt(snapshot, pending, recent, slot, dry_run=dry_run)
+
+        print(f"🧠 {slot} 巡回開始 cycle={cycle_id} タブ{snapshot['totals']['tabs']} "
+              f"(dry_run={dry_run}, model={model})", file=sys.stderr)
+
+        try:
+            brain = _run_brain(prompt, cycle_id, model, dry_run)
+            # 脳がツール疎通確認に失敗した場合(手順0)は30秒置いて1回だけ再試行
+            if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
+                _log_cycle({"event": "mcp_load_failure_retry", "cycle_id": cycle_id})
+                print("⚠️  MCPロード失敗 → 30秒後にリトライ", file=sys.stderr)
+                time.sleep(30)
+                brain = _run_brain(prompt, cycle_id, model, dry_run)
+                if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
+                    fallback_notify("MCPツールのロードに2回失敗(巡回未実施)")
+                    _log_cycle({"event": "mcp_load_failure_final",
+                                "cycle_id": cycle_id})
+                    return 1
+        except subprocess.TimeoutExpired:
+            _log_cycle({"event": "brain_timeout", "cycle_id": cycle_id,
+                        "timeout_sec": BRAIN_TIMEOUT_SEC})
+            fallback_notify(f"脳が{BRAIN_TIMEOUT_SEC // 60}分でタイムアウト")
+            return 1
+
+        duration = (datetime.now() - started).total_seconds()
+        _log_cycle({
+            "event": "cycle_done",
+            "cycle_id": cycle_id,
+            "slot": slot,
+            "dry_run": dry_run,
+            "model": model,
+            "ok": not brain.get("is_error"),
+            "duration_s": round(duration, 1),
+            "cost_usd": brain.get("cost_usd"),
+            "num_turns": brain.get("num_turns"),
+            "expired_pending": n_exp,
+            "pruned_history": n_pru,
+            "result_tail": (brain.get("result_text") or "")[-800:],
+        })
+
+        if brain.get("is_error"):
+            fallback_notify(f"脳がエラー終了: {(brain.get('stderr') or '')[:150]}")
+            print(f"❌ 脳がエラー終了 ({duration:.0f}s)", file=sys.stderr)
+            return 1
+
+        mark_cycle_success()
+        print(f"✅ 巡回完了 ({duration:.0f}s, ${brain.get('cost_usd') or '?'}, "
+              f"{brain.get('num_turns') or '?'}ターン)", file=sys.stderr)
+        print(brain.get("result_text", ""))
+        return 0
+
+    except Exception as e:  # noqa: BLE001 — launchd運用では握って一報
+        _log_cycle({"event": "cycle_crashed", "error": repr(e)})
+        fallback_notify(f"サイクルが例外で停止: {e}")
+        raise
+    finally:
+        if caffeinate:
+            caffeinate.terminate()
+        release_cycle_lock()

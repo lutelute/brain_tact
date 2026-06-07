@@ -1,0 +1,8 @@
+# 実行時状態(スナップショット・保留・ログ)はコミットしない
+state/
+logs/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+uv.lock

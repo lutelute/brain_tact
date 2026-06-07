@@ -1,0 +1,10 @@
+⏺ 解析を続けます。データセット全体を読み込んで集計します。
+
+⏺ Bash(python3 analyze.py --full)
+  ⎿  API Error (Connection error)
+  ⎿  Retrying in 8s · attempt 3/10
+
+────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

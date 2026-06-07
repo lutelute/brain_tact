@@ -1,0 +1,10 @@
+✢ 気持ちタグを永続化中… (25m 57s · still thinking with max effort)
+  ⎿  ◼ A-2: 気持ちタグの永続化
+     ◻ B: 週次振り返り画面「庭を眺める」
+     ◻ C: AI振り返り用プロンプト付きコピー
+      … +4 pending, 2 completed
+───────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────
+  📊 progbar 待機 · wabi                        Remote Control active
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

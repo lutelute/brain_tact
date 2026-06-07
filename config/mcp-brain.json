@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "brain-actuator": {
+      "type": "stdio",
+      "command": "/Users/shigenoburyuto/.local/bin/uv",
+      "args": [
+        "run",
+        "--directory",
+        "/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact",
+        "brain-actuator-mcp"
+      ],
+      "env": {}
+    },
+    "line-bridge": {
+      "type": "stdio",
+      "command": "/Users/shigenoburyuto/.local/bin/uv",
+      "args": [
+        "run",
+        "--directory",
+        "/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/sLINE",
+        "server.py"
+      ],
+      "env": {}
+    }
+  }
+}

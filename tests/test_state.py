@@ -1,0 +1,116 @@
+"""state.py のガードレールロジック(上限・クールダウン・pending)のテスト。"""
+
+from datetime import datetime, timedelta
+
+import pytest
+
+from brain_tact import state
+
+
+@pytest.fixture(autouse=True)
+def isolated_state(tmp_path, monkeypatch):
+    """実際のstate/を汚さないよう全パスをtmpに差し替える。"""
+    monkeypatch.setattr(state, "ACTIONS_LOG", tmp_path / "actions.log")
+    monkeypatch.setattr(state, "PENDING_JSON", tmp_path / "pending.json")
+    monkeypatch.setattr(state, "HISTORY_DIR", tmp_path / "history")
+    monkeypatch.setattr(state, "LAST_SUCCESS", tmp_path / "last_success")
+    monkeypatch.setattr(state, "LOCK_FILE", tmp_path / "cycle.lock")
+    monkeypatch.setattr(state, "ensure_dirs", lambda: None)
+    return tmp_path
+
+
+def _sent(tty: str, tool: str, cycle: str, ago_hours: float = 0.0) -> None:
+    ts = (datetime.now().astimezone() - timedelta(hours=ago_hours)).isoformat(
+        timespec="seconds")
+    state.log_action({
+        "ts": ts, "cycle_id": cycle, "tool": tool, "tty": tty,
+        "payload": {}, "reason": "t", "result": "sent",
+    })
+
+
+class TestCheckLimits:
+    def test_allows_first_action(self):
+        ok, _ = state.check_limits("/dev/ttys001", "act_send", "c1")
+        assert ok
+
+    def test_per_tty_per_cycle(self):
+        _sent("/dev/ttys001", "act_send", "c1")
+        ok, why = state.check_limits("/dev/ttys001", "act_send", "c1")
+        assert not ok and "1回実行済み" in why
+
+    def test_approve_allows_three(self):
+        _sent("/dev/ttys001", "act_approve", "c1")
+        _sent("/dev/ttys001", "act_approve", "c1")
+        ok, _ = state.check_limits("/dev/ttys001", "act_approve", "c1")
+        assert ok
+        _sent("/dev/ttys001", "act_approve", "c1")
+        ok, why = state.check_limits("/dev/ttys001", "act_approve", "c1")
+        assert not ok
+
+    def test_cooldown_across_cycles(self):
+        """サイクルが変わっても6時間以内のact_sendはクールダウン拒否。"""
+        _sent("/dev/ttys001", "act_send", "c1", ago_hours=2.0)
+        ok, why = state.check_limits("/dev/ttys001", "act_send", "c2")
+        assert not ok and "クールダウン" in why
+
+    def test_cooldown_expires(self):
+        _sent("/dev/ttys001", "act_send", "c1", ago_hours=7.0)
+        ok, _ = state.check_limits("/dev/ttys001", "act_send", "c2")
+        assert ok
+
+    def test_resume_cooldown_12h(self):
+        _sent("/dev/ttys001", "act_resume", "c1", ago_hours=10.0)
+        ok, why = state.check_limits("/dev/ttys001", "act_resume", "c2")
+        assert not ok
+        _sent("/dev/ttys002", "act_resume", "c1", ago_hours=13.0)
+        ok, _ = state.check_limits("/dev/ttys002", "act_resume", "c2")
+        assert ok
+
+    def test_cycle_total_cap(self):
+        for i in range(state.MAX_ACTIONS_PER_CYCLE):
+            _sent(f"/dev/ttys{i:03d}", "act_send", "c1")
+        ok, why = state.check_limits("/dev/ttys999", "act_send", "c1")
+        assert not ok and "上限" in why
+
+    def test_rejections_dont_count(self):
+        """拒否された記録(result != sent)は上限カウントに入らない。"""
+        state.log_action({"cycle_id": "c1", "tool": "act_send",
+                          "tty": "/dev/ttys001", "result": "rejected: x"})
+        ok, _ = state.check_limits("/dev/ttys001", "act_send", "c1")
+        assert ok
+
+
+class TestPending:
+    def test_add_and_resolve(self):
+        item_id = state.add_pending("/dev/ttys001", "approval", "rm承認待ち", "c1")
+        items = state.load_pending()["items"]
+        assert len(items) == 1 and items[0]["status"] == "open"
+        assert state.resolve_pending(item_id, "承認した")
+        assert state.load_pending()["items"][0]["status"] == "resolved"
+
+    def test_supersede_same_tty_kind(self):
+        """同tty同kindの古いopen項目は新規追加時にsupersededになる。"""
+        state.add_pending("/dev/ttys001", "approval", "古い", "c1")
+        state.add_pending("/dev/ttys001", "approval", "新しい", "c2")
+        items = state.load_pending()["items"]
+        statuses = sorted(i["status"] for i in items)
+        assert statuses == ["open", "superseded"]
+        open_item = next(i for i in items if i["status"] == "open")
+        assert open_item["summary"] == "新しい"
+
+    def test_resolve_unknown_returns_false(self):
+        assert not state.resolve_pending("p-nope", "x")
+
+
+class TestLockDebounce:
+    def test_lock_exclusive(self):
+        assert state.acquire_cycle_lock()
+        assert not state.acquire_cycle_lock()
+        state.release_cycle_lock()
+        assert state.acquire_cycle_lock()
+        state.release_cycle_lock()
+
+    def test_debounce(self):
+        assert not state.should_debounce()  # 初回は実行可
+        state.mark_cycle_success()
+        assert state.should_debounce()      # 直後は抑止

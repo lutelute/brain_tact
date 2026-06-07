@@ -1,0 +1,10 @@
+      207    auto_track.py  ③' 任意: board 自動生成フック（SessionStart/Stop）
+✢ auto_track を配備中… (29m 6s · ↑ 27.3k tokens)
+  ⎿  ✔ track 複合ツール実装（scan→ingest→render を1コール化）
+     ✔ 配布性整備（console_scripts + .mcp.json.example 汎用化）
+     ◼ auto_track 常設配備（性能実測 → hooks 登録）
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  📊 progbar 待機 · mcp_prog_bar                                                                           Remote Control active
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

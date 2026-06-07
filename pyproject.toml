@@ -1,0 +1,24 @@
+[project]
+name = "brain-tact"
+version = "0.1.0"
+description = "Claude Codeセッション群の監督脳 — 定時スキャン・判断・介入・LINE報告"
+authors = [
+    { name = "lutelute", email = "17675761+lutelute@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=3.2.4",
+]
+
+[project.scripts]
+brain-tact = "brain_tact.cli:main"
+brain-actuator-mcp = "brain_tact.actuator:run"
+
+[build-system]
+requires = ["uv_build>=0.9.22,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

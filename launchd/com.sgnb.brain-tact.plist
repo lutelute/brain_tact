@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sgnb.brain-tact</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/bin/brain-cycle.sh</string>
+  </array>
+
+  <!-- 朝7時 / 昼12時 / 夕17時 / 夜22時。
+       スリープ中の発火分は起床時に1回にまとめて実行される(デバウンスで正規化) -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+
+  <!-- ロード時の暴発防止 -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/state/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/state/launchd-error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/shigenoburyuto/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/shigenoburyuto</string>
+  </dict>
+</dict>
+</plist>
