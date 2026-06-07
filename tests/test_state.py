@@ -80,6 +80,42 @@ class TestCheckLimits:
         assert ok
 
 
+def _verify(tty: str, result: str, ago_hours: float) -> None:
+    ts = (datetime.now().astimezone() - timedelta(hours=ago_hours)).isoformat(
+        timespec="seconds")
+    state.log_action({"ts": ts, "cycle_id": "cx", "tool": "verify",
+                      "tty": tty, "target_tool": "act_send", "result": result})
+
+
+class TestThreeStrikes:
+    def test_two_consecutive_duds_block_send(self):
+        _verify("/dev/ttys001", "no_change", 12.0)
+        _verify("/dev/ttys001", "no_change", 6.0)
+        ok, why = state.check_limits("/dev/ttys001", "act_send", "c9")
+        assert not ok and "3ストライク" in why
+
+    def test_reactivated_resets_streak(self):
+        """間に効いた介入があれば連続カウントはリセット。"""
+        _verify("/dev/ttys001", "no_change", 24.0)
+        _verify("/dev/ttys001", "reactivated", 12.0)
+        _verify("/dev/ttys001", "no_change", 6.0)
+        ok, _ = state.check_limits("/dev/ttys001", "act_send", "c9")
+        assert ok
+
+    def test_strikes_dont_block_other_ttys(self):
+        _verify("/dev/ttys001", "no_change", 12.0)
+        _verify("/dev/ttys001", "no_change", 6.0)
+        ok, _ = state.check_limits("/dev/ttys002", "act_send", "c9")
+        assert ok
+
+    def test_strikes_dont_block_resume(self):
+        """3ストライクはact_sendのみ。復元(resume)は別物。"""
+        _verify("/dev/ttys001", "no_change", 12.0)
+        _verify("/dev/ttys001", "no_change", 6.0)
+        ok, _ = state.check_limits("/dev/ttys001", "act_resume", "c9")
+        assert ok
+
+
 class TestPending:
     def test_add_and_resolve(self):
         item_id = state.add_pending("/dev/ttys001", "approval", "rm承認待ち", "c1")

@@ -27,6 +27,8 @@ HISTORY_KEEP_DAYS = 14
 MAX_ACTIONS_PER_CYCLE = 15
 PER_TTY_PER_CYCLE = {"act_send": 1, "act_approve": 3, "act_resume": 1}
 COOLDOWN_HOURS = {"act_send": 6.0, "act_resume": 12.0}
+STRIKE_OUT = 2                 # 連続不発(no_change)がこの回数でact_send禁止
+STRIKE_WINDOW_HOURS = 48.0     # 3ストライク判定に使うverify参照期間
 
 
 def _now_iso() -> str:
@@ -125,6 +127,21 @@ def check_limits(tty: str, tool: str, cycle_id: str) -> tuple[bool, str]:
         if recent:
             return False, (f"{tool} は {tty} に対して過去{cooldown:.0f}時間以内に "
                            f"実行済み(クールダウン中)。必要なら defer してユーザーに委ねること")
+
+    # 3ストライク: このttyへのact_sendが連続して不発(verify=no_change)なら禁止
+    if tool == "act_send":
+        verifies = [r for r in read_actions(hours=STRIKE_WINDOW_HOURS)
+                    if r.get("tool") == "verify" and r.get("tty") == tty
+                    and r.get("target_tool") == "act_send"]
+        streak = 0
+        for r in reversed(verifies):  # 新しい順に連続不発を数える
+            if r.get("result") == "no_change":
+                streak += 1
+            else:
+                break
+        if streak >= STRIKE_OUT:
+            return False, (f"3ストライク: {tty} への直近{streak}回の送信が不発"
+                           f"(no_change)。これ以上突かず defer すること")
     return True, ""
 
 
