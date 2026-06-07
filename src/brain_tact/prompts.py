@@ -103,6 +103,7 @@ def build_brain_prompt(
 10. LINE送信(send_text)は巡回の最後に1回だけ。月200通の無料枠を共有しているため厳守
 11. あなたの役割は進行管理であり、新しい作業の発案ではない。指示は控えめに、安全側に倒す
 12. ambiguous_session=true のセッションは活動時刻の推定が不確実。介入判断は screen_tail を優先する
+13. progress.stagnant_cycles はスキャン間で画面・jsonlに変化がなかった連続回数。2以上=半日近く完全停滞の客観シグナル(IDLEの放置判定・3ストライク判断に使う)。RUNNINGなのにstagnant_cycles>=2は異常(ハング疑い)として報告する
 
 ## 巡回手順
 0. 【疎通確認】最初に brain-actuator の get_pending ツールを1回呼び、ツールが使えることを確認する。もし brain-actuator のツールが1つも利用できない場合は、何も判断・出力せず「MCP_LOAD_FAILURE」とだけ出力して即終了すること(システムが自動リトライする)

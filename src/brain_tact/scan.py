@@ -1,5 +1,6 @@
 """タブ・プロセス・セッション・分類を束ねてスナップショットJSONを生成する。"""
 
+import hashlib
 import json
 from datetime import datetime
 
@@ -19,13 +20,42 @@ def _tail(screen: str, n: int) -> list[str]:
     return [ln for ln in lines if ln.strip()][-n:]
 
 
-def _load_prev_states() -> dict[str, str]:
-    """前回スナップショットの tty -> state_hint(DEAD_SHELL判定に使う)。"""
+def _screen_hash(tail: list[str]) -> str:
+    return hashlib.md5("\n".join(tail).encode()).hexdigest()[:10]
+
+
+def compute_progress(
+    screen_hash: str,
+    jsonl_mtime: float | None,
+    prev_record: dict | None,
+) -> dict:
+    """前回スナップショットとの比較で進展を判定する(純関数)。
+
+    changed = 画面が変わった or jsonlが進んだ。RUNNINGはスピナーの経過秒で
+    画面が毎回変わるため自然にchanged=Trueになる(動いている証拠として正しい)。
+    stagnant_cycles = 連続して変化がないスキャン回数。2以上で「停滞」扱い。
+    """
+    if not prev_record:
+        return {"changed": True, "stagnant_cycles": 0}
+    jsonl_advanced = bool(
+        jsonl_mtime
+        and prev_record.get("jsonl_mtime")
+        and jsonl_mtime > prev_record["jsonl_mtime"] + 1.0
+    )
+    changed = screen_hash != prev_record.get("screen_hash") or jsonl_advanced
+    if changed:
+        return {"changed": True, "stagnant_cycles": 0}
+    prev_stagnant = (prev_record.get("progress") or {}).get("stagnant_cycles", 0)
+    return {"changed": False, "stagnant_cycles": prev_stagnant + 1}
+
+
+def _load_prev_records() -> dict[str, dict]:
+    """前回スナップショットの tty -> record(差分検出・DEAD_SHELL判定に使う)。"""
     if not LATEST_JSON.exists():
         return {}
     try:
         prev = json.loads(LATEST_JSON.read_text())
-        return {s["tty"]: s["state_hint"] for s in prev.get("sessions", [])}
+        return {s["tty"]: s for s in prev.get("sessions", [])}
     except (json.JSONDecodeError, KeyError):
         return {}
 
@@ -42,15 +72,21 @@ def run_scan(quick: bool = False) -> dict:
     tabs = capture_all_tabs()
     procs = find_claude_processes()
     sess = attach_sessions(procs)
-    prev_states = _load_prev_states()
+    prev_records = _load_prev_records()
 
     records = []
     for tab in tabs:
         proc = procs.get(tab.tty)
         info = sess.get(tab.tty)
-        cls = classify(tab.contents, proc, info, prev_states.get(tab.tty))
+        prev = prev_records.get(tab.tty)
+        cls = classify(tab.contents, proc, info,
+                       prev.get("state_hint") if prev else None)
 
         n = TAIL_ATTENTION if cls.attention else TAIL_RUNNING
+        screen_tail = _tail(tab.contents, n)
+        # ハッシュは行数に依存しないよう常に固定30行で計算する
+        h = _screen_hash(_tail(tab.contents, TAIL_ATTENTION))
+        jsonl_mtime = info.mtime if info else None
         records.append({
             "tty": tab.tty,
             "title": tab.title,
@@ -65,7 +101,10 @@ def run_scan(quick: bool = False) -> dict:
             "state_hint": cls.state_hint,
             "attention": cls.attention,
             "signals": cls.signals,
-            "screen_tail": _tail(tab.contents, n),
+            "screen_hash": h,
+            "jsonl_mtime": jsonl_mtime,
+            "progress": compute_progress(h, jsonl_mtime, prev),
+            "screen_tail": screen_tail,
         })
 
     by_state: dict[str, int] = {}
