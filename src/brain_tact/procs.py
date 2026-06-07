@@ -86,8 +86,9 @@ def _attach_cwds(procs: dict[str, ClaudeProc]) -> None:
     if not procs:
         return
     pids = ",".join(str(p.pid) for p in procs.values())
+    # launchd環境はPATHが細い(/usr/sbinが無いとlsofが見つからない)のでフルパス指定
     result = subprocess.run(
-        ["lsof", "-a", "-p", pids, "-d", "cwd", "-Fpn"],
+        ["/usr/sbin/lsof", "-a", "-p", pids, "-d", "cwd", "-Fpn"],
         capture_output=True, text=True, timeout=30,
     )
     by_pid = {p.pid: p for p in procs.values()}
