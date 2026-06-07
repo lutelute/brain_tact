@@ -74,6 +74,10 @@ def run_scan(quick: bool = False) -> dict:
     sess = attach_sessions(procs)
     prev_records = _load_prev_records()
 
+    # git文脈は同一cwdで1回だけ取得
+    from .gitinfo import collect_git_contexts
+    git_by_cwd = collect_git_contexts({p.cwd for p in procs.values() if p.cwd})
+
     records = []
     for tab in tabs:
         proc = procs.get(tab.tty)
@@ -98,6 +102,7 @@ def run_scan(quick: bool = False) -> dict:
             "cwd": proc.cwd if proc else None,
             "project": (proc.cwd or "").rsplit("/", 1)[-1] if proc and proc.cwd else None,
             "session_id": info.session_id if info else None,
+            "git": git_by_cwd.get(proc.cwd) if proc and proc.cwd else None,
             "state_hint": cls.state_hint,
             "attention": cls.attention,
             "signals": cls.signals,
