@@ -35,8 +35,23 @@ from .state import (
 )
 
 BRAIN_TIMEOUT_SEC = 900          # 15分でSIGKILL
-FALLBACK_TIMEOUT_SEC = 120
 MAX_BUDGET_USD = "3"
+
+# 脳に許可するMCPツール。--strict-mcp-config 使用時は --allowedTools で明示
+# しないとMCPツールがロードされない(--tools "" や無指定では全滅する。実機確認済み)。
+# run_cycle_now は脳自身が呼ぶと再帰するので意図的に除外。
+ACTUATOR_TOOLS = [
+    "mcp__brain-actuator__get_pending",
+    "mcp__brain-actuator__get_snapshot",
+    "mcp__brain-actuator__get_cleanup",
+    "mcp__brain-actuator__scan_now",
+    "mcp__brain-actuator__act_send",
+    "mcp__brain-actuator__act_approve",
+    "mcp__brain-actuator__act_resume",
+    "mcp__brain-actuator__defer",
+    "mcp__brain-actuator__resolve_pending",
+]
+LINE_TOOLS = ["mcp__line-bridge__send_text"]
 
 
 # 後方互換エイリアス(実体は __init__.claude_bin)
@@ -54,6 +69,7 @@ def _run_brain(prompt: str, cycle_id: str, model: str, dry_run: bool) -> dict:
     """claude -p(脳)を起動して結果dictを返す。"""
     # dry-run時はline-bridgeを外した構成にする(本物のLINE pushを防ぐ)
     mcp_config = MCP_BRAIN_DRY_JSON if dry_run else MCP_BRAIN_JSON
+    allowed = ACTUATOR_TOOLS if dry_run else ACTUATOR_TOOLS + LINE_TOOLS
     cmd = [
         _claude_bin(), "-p",
         "--output-format", "json",
@@ -62,7 +78,8 @@ def _run_brain(prompt: str, cycle_id: str, model: str, dry_run: bool) -> dict:
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
         "--mcp-config", str(mcp_config),
-        "--tools", "",
+        # --allowedTools でMCPツールを明示許可(これが無いとMCPがロードされない)
+        "--allowedTools", " ".join(allowed),
         "--max-budget-usd", MAX_BUDGET_USD,
     ]
     env = dict(os.environ)

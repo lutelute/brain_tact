@@ -63,12 +63,16 @@ uv run brain-tact install --skill     # /brainスキルを ~/.claude/skills/ へ
 | コマンド | 用途 |
 |---|---|
 | `brain-tact scan [--quick] [--json]` | 全タブスキャン+状態分類 |
+| `brain-tact cleanup [--scan] [--json]` | 🧹 掃除判定(閉じてOK/要引き継ぎ)を表示 |
+| `brain-tact serve [--port N]` | 📊 ダッシュボードをlocalhostで起動 |
 | `brain-tact cycle [--force] [--dry-run] [--model X]` | 巡回サイクル実行 |
 | `brain-tact pending [list\|resolve <id> --note N]` | 保留リスト操作 |
 | `brain-tact log [--tail N]` | 脳のアクション監査ログ |
 | `brain-tact doctor` | 環境・権限・直近サイクルの自己診断 |
 | `brain-tact stats [--days N]` | KPI(介入成功率・稼働率推移) |
 | `brain-tact install [--launchd] [--skill] [--dry-run]` | インストール |
+
+> メニューバーアプリ(`brain-tact-app`, rumps製)もあるが、本命は **ダッシュボード(`serve`)** と **MCP(`brain`)**。Tin/AtelierXからは `GET /api/state` か MCP を叩いて統合する。
 
 ## 攻めモード(誰もサボらせない)
 
