@@ -40,7 +40,12 @@ VALID_KINDS = {"approval", "question", "stalled", "dead", "limit", "other"}
 
 
 def _send_to_tab(tty: str, command: str) -> bool:
-    """watchdogから移植: do script でタブにテキスト+改行を送る。"""
+    """do script でタブにテキストを送り、Enterまで確実に押す。
+
+    実機で確認したバグ: do script の改行はClaude TUI(Ink)でペースト扱いに
+    なり「送信」されず入力欄に溜まる。テキスト投入後に少し待ってから
+    空の do script(改行のみ)を追い打ちしてEnterを成立させる。
+    """
     safe = command.replace("\\", "\\\\").replace('"', '\\"')
     script = f'''
     tell application "Terminal"
@@ -49,6 +54,8 @@ def _send_to_tab(tty: str, command: str) -> bool:
                 try
                     if (tty of t) = "{tty}" then
                         do script "{safe}" in t
+                        delay 0.5
+                        do script "" in t
                         return true
                     end if
                 end try
@@ -58,7 +65,7 @@ def _send_to_tab(tty: str, command: str) -> bool:
     return false
     '''
     result = subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, timeout=15,
+        ["osascript", "-e", script], capture_output=True, text=True, timeout=20,
     )
     return result.stdout.strip().lower() == "true"
 
