@@ -182,14 +182,18 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             brain = _run_brain(prompt, cycle_id, model, dry_run)
             # 脳がツール疎通確認に失敗した場合(手順0)は30秒置いて1回だけ再試行
             if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
-                _log_cycle({"event": "mcp_load_failure_retry", "cycle_id": cycle_id})
+                _log_cycle({"event": "mcp_load_failure_retry", "cycle_id": cycle_id,
+                            "result_tail": (brain.get("result_text") or "")[-300:],
+                            "stderr": (brain.get("stderr") or "")[-300:]})
                 print("⚠️  MCPロード失敗 → 30秒後にリトライ", file=sys.stderr)
                 time.sleep(30)
                 brain = _run_brain(prompt, cycle_id, model, dry_run)
                 if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
                     fallback_notify("MCPツールのロードに2回失敗(巡回未実施)")
                     _log_cycle({"event": "mcp_load_failure_final",
-                                "cycle_id": cycle_id})
+                                "cycle_id": cycle_id,
+                                "result_tail": (brain.get("result_text") or "")[-300:],
+                                "stderr": (brain.get("stderr") or "")[-300:]})
                     return 1
         except subprocess.TimeoutExpired:
             _log_cycle({"event": "brain_timeout", "cycle_id": cycle_id,
@@ -217,6 +221,13 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             fallback_notify(f"脳がエラー終了: {(brain.get('stderr') or '')[:150]}")
             print(f"❌ 脳がエラー終了 ({duration:.0f}s)", file=sys.stderr)
             return 1
+
+        # dry-runは本番成功とみなさない(last_successを進めると直後の定時発火が
+        # デバウンスで誤スキップされる — 07:00発火が2分差で抑止された実例あり)
+        if dry_run:
+            print("🧪 dry-run完了(last_successは更新しない)", file=sys.stderr)
+            print(brain.get("result_text", ""))
+            return 0
 
         mark_cycle_success()
         print(f"✅ 巡回完了 ({duration:.0f}s, ${brain.get('cost_usd') or '?'}, "
