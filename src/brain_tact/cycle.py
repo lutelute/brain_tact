@@ -229,7 +229,11 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             print(brain.get("result_text", ""))
             return 0
 
-        mark_cycle_success()
+        # last_successはlaunchd定時発火(非force)のみ更新する。
+        # 手動--force実行が更新すると次の定時がデバウンスで連鎖スキップされる
+        # (実例: 09:13手動成功 → 12:00定時が2.7h<3hでスキップ)
+        if not force:
+            mark_cycle_success()
         print(f"✅ 巡回完了 ({duration:.0f}s, ${brain.get('cost_usd') or '?'}, "
               f"{brain.get('num_turns') or '?'}ターン)", file=sys.stderr)
         print(brain.get("result_text", ""))

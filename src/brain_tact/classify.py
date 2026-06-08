@@ -59,6 +59,9 @@ UI_TRACE_RE = re.compile(
     r"tokens|esc to interrupt|/config|⏵⏵|bypass permissions|Welcome to Claude"
 )
 
+# コンテキストがほぼ満杯のサイン(「new task? /clear to save 289.1k tokens」)
+CONTEXT_FULL_RE = re.compile(r"new task\?\s*/clear to save")
+
 
 @dataclass
 class Classified:
@@ -108,6 +111,8 @@ def classify(
     signals: dict = {
         "permission_mode": _permission_mode(text),
         "has_subagents": bool(SUBAGENT_RE.search(text)),
+        # コンテキスト満杯のセッションは新しい仕事を振れない(攻めモード対象外)
+        "context_full": bool(CONTEXT_FULL_RE.search(text)),
     }
     if proc is not None:
         signals["cpu_pct"] = proc.cpu_pct
