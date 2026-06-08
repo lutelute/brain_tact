@@ -137,9 +137,10 @@ def summarize(snapshot: dict) -> dict:
     judged = []
     counts: dict[str, int] = {}
     for rec in sessions:
-        j = judge_session(rec)
+        # scan時に付与済みならそれを使う(再判定せず一貫性を保つ)
+        j = rec.get("cleanup") or judge_session(rec)
         counts[j["category"]] = counts.get(j["category"], 0) + 1
-        judged.append({**rec, "cleanup": j})
+        judged.append(rec if "cleanup" in rec else {**rec, "cleanup": j})
 
     closeable = [s for s in judged if s["cleanup"]["close_ok"]]
     handover = [s for s in judged if s["cleanup"]["needs_handover"]]

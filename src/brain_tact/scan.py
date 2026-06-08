@@ -139,6 +139,11 @@ def run_scan(quick: bool = False) -> dict:
         "sessions": records,
     }
 
+    # 各セッションに掃除判定を付与(脳・ダッシュボード・MCPが共通で使う)
+    from .cleanup import judge_session
+    for r in records:
+        r["cleanup"] = judge_session(r)
+
     LATEST_JSON.write_text(json.dumps(snapshot, ensure_ascii=False, indent=1))
     if not quick:
         (HISTORY_DIR / f"scan-{cycle_id}.json").write_text(

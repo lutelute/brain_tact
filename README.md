@@ -1,6 +1,14 @@
 # brain_tact 🧠
 
-**Claude Codeセッション群の監督脳** — 20〜30個の放置されがちなClaude Codeウィンドウを、定時(朝7/昼12/夕17/夜22時)に自動巡回し、ヘッドレスClaudeが「継続/介入/保留」を判断して、LINEに報告する。
+**Claude Codeセッション群の監督脳** — 20〜30個の放置されがちなClaude Codeウィンドウを片付ける。**掃除ファースト**: 終わった/満杯のセッションを「閉じてOK」「要引き継ぎ」に仕分け、定時(朝7/昼12/夕17/夜22時)に巡回して、ダッシュボードとLINEで報告する。
+
+## 3つの入口(どこからでもbrain)
+
+| 入口 | 用途 |
+|---|---|
+| **MCP** (`brain`) | Claude Code/アプリから `scan_now` `get_cleanup` `run_cycle_now` `act_*` を呼ぶ。userスコープ登録済み |
+| **CLI** (`brain-tact`) | `scan` `cleanup` `cycle` `serve` `pending` `doctor` `stats` |
+| **ダッシュボード** (`serve`) | localhost:8787 で全状態を見える化。`GET /api/state` はTin/AtelierX統合用API |
 
 ```
 launchd (7/12/17/22時)
