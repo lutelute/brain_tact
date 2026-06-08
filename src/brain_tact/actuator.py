@@ -119,8 +119,70 @@ def _guarded_send(tool: str, tty: str, text: str, reason: str,
 def get_snapshot() -> str:
     """最新スキャンのスナップショットJSON(全セッションの状態)を返す。"""
     if not LATEST_JSON.exists():
-        return "スナップショットがありません。"
+        return "スナップショットがありません。scan_now で取得できます。"
     return LATEST_JSON.read_text()
+
+
+@mcp.tool()
+def scan_now() -> str:
+    """いま全Terminal.appタブをスキャンし、状態+掃除判定のサマリを返す。
+
+    「どこからでもbrain」の入口。Claude Codeや他アプリからこれを呼べば、
+    全セッションの今の状態(稼働/放置/閉じてOK/要引き継ぎ)が一覧で得られる。
+    """
+    from .scan import run_scan
+    snap = run_scan(quick=True)
+    return _state_summary(snap)
+
+
+@mcp.tool()
+def get_cleanup() -> str:
+    """最新スナップショットの掃除判定(閉じてOK/要引き継ぎ/要判断)を返す。
+
+    「どのウィンドウを片付けられるか」を知りたいときに使う。
+    """
+    if not LATEST_JSON.exists():
+        return "スナップショットがありません。scan_now を先に実行してください。"
+    snap = json.loads(LATEST_JSON.read_text())
+    return _state_summary(snap)
+
+
+def _state_summary(snap: dict) -> str:
+    """スナップショット → 掃除判定込みのJSON文字列。"""
+    from .cleanup import summarize
+    cl = summarize(snap)
+    out = {
+        "taken_at": snap.get("taken_at"),
+        "totals": snap.get("totals"),
+        "headline": cl["headline"],
+        "closeable": cl["closeable"],
+        "needs_handover": cl["needs_handover"],
+        "sessions": [
+            {
+                "tty": s["tty"], "project": s.get("project"),
+                "state_hint": s["state_hint"],
+                "category": s["cleanup"]["category"],
+                "reason": s["cleanup"]["reason"],
+                "action": s["cleanup"]["action"],
+                "git": s.get("git"),
+                "last_assistant": s.get("last_assistant"),
+            }
+            for s in cl["sessions"]
+        ],
+    }
+    return json.dumps(out, ensure_ascii=False, indent=1)
+
+
+@mcp.tool()
+def run_cycle_now(dry_run: bool = True) -> str:
+    """定時巡回サイクルを今すぐ1回実行する(脳が判断・介入・報告)。
+
+    Args:
+        dry_run: Trueなら判断のみで実介入・LINE送信しない(デフォルト安全側)
+    """
+    from .cycle import run_cycle
+    rc = run_cycle(force=True, dry_run=dry_run)
+    return f"巡回完了 (rc={rc}, dry_run={dry_run})。詳細は get_cleanup / brain-tact log で確認。"
 
 
 @mcp.tool()

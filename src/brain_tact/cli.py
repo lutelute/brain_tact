@@ -77,6 +77,38 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    import json as _json
+
+    from . import LATEST_JSON
+    from .cleanup import summarize
+    from .scan import run_scan
+    if args.scan or not LATEST_JSON.exists():
+        snap = run_scan(quick=True)
+    else:
+        snap = _json.loads(LATEST_JSON.read_text())
+    s = summarize(snap)
+    if args.json:
+        print(_json.dumps(s, ensure_ascii=False, indent=1))
+        return 0
+    print(f"🧠 {s['headline']}\n")
+    if s["closeable"]:
+        print("🧹 閉じてOK:")
+        for x in s["closeable"]:
+            print(f"   {x['project'] or x['tty']:<18} {x['reason']}")
+    if s["needs_handover"]:
+        print("\n💾 要引き継ぎ(閉じる前に保存):")
+        for x in s["needs_handover"]:
+            print(f"   {x['project'] or x['tty']:<18} {x['reason']}")
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    from .dashboard import serve
+    serve(port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .doctor import format_doctor, run_doctor
     checks = run_doctor()
@@ -122,6 +154,16 @@ def main(argv: list[str] | None = None) -> int:
     lp = sub.add_parser("log", help="脳のアクション記録を表示")
     lp.add_argument("--tail", type=int, default=30)
     lp.set_defaults(func=cmd_log)
+
+    cup = sub.add_parser("cleanup", help="掃除判定(閉じてOK/要引き継ぎ)を表示")
+    cup.add_argument("--scan", action="store_true", help="先に再スキャンする")
+    cup.add_argument("--json", action="store_true")
+    cup.set_defaults(func=cmd_cleanup)
+
+    svp = sub.add_parser("serve", help="ダッシュボードをlocalhostで起動")
+    svp.add_argument("--port", type=int, default=8787)
+    svp.add_argument("--no-browser", action="store_true", help="ブラウザを開かない")
+    svp.set_defaults(func=cmd_serve)
 
     dp = sub.add_parser("doctor", help="環境・依存・権限の自己診断")
     dp.set_defaults(func=cmd_doctor)
