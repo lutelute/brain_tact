@@ -7,11 +7,25 @@ from pathlib import Path
 
 from . import BRAIN_DIR
 
+LA = Path.home() / "Library" / "LaunchAgents"
 PLIST_SRC = BRAIN_DIR / "launchd" / "com.sgnb.brain-tact.plist"
-PLIST_DST = Path.home() / "Library" / "LaunchAgents" / "com.sgnb.brain-tact.plist"
+PLIST_DST = LA / "com.sgnb.brain-tact.plist"
+DASH_SRC = BRAIN_DIR / "launchd" / "com.sgnb.brain-tact-dashboard.plist"
+DASH_DST = LA / "com.sgnb.brain-tact-dashboard.plist"
 SKILL_SRC = BRAIN_DIR / "skills" / "brain"
 SKILL_DST = Path.home() / ".claude" / "skills" / "brain"
 CYCLE_SH = BRAIN_DIR / "bin" / "brain-cycle.sh"
+
+
+def _load_agent(src: Path, dst: Path, label: str) -> bool:
+    """plistを配置してload(既ロードなら入れ替え)。成功でTrue。"""
+    subprocess.run(["launchctl", "unload", str(dst)], capture_output=True, text=True)
+    shutil.copy2(src, dst)
+    r = subprocess.run(["launchctl", "load", str(dst)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"❌ {label} load失敗: {r.stderr.strip()}", file=sys.stderr)
+        return False
+    return True
 
 
 def install_launchd(dry: bool = False) -> int:
@@ -23,22 +37,16 @@ def install_launchd(dry: bool = False) -> int:
         return 0
 
     CYCLE_SH.chmod(0o755)
-    PLIST_DST.parent.mkdir(parents=True, exist_ok=True)
+    LA.mkdir(parents=True, exist_ok=True)
 
-    # 既ロードなら一旦unload(plist更新の反映)
-    subprocess.run(["launchctl", "unload", str(PLIST_DST)],
-                   capture_output=True, text=True)
-    shutil.copy2(PLIST_SRC, PLIST_DST)
-    result = subprocess.run(["launchctl", "load", str(PLIST_DST)],
-                            capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"❌ launchctl load 失敗: {result.stderr.strip()}", file=sys.stderr)
-        return 1
-    print(f"✅ LaunchAgent登録: {PLIST_DST}")
-    print("   発火時刻: 7:00 / 12:00 / 17:00 / 22:00")
-    print("   手動発火テスト: launchctl kickstart -k "
-          "gui/$(id -u)/com.sgnb.brain-tact")
-    return 0
+    ok1 = _load_agent(PLIST_SRC, PLIST_DST, "定時巡回")
+    ok2 = _load_agent(DASH_SRC, DASH_DST, "ダッシュボード")
+    if ok1:
+        print(f"✅ 定時巡回: {PLIST_DST.name}(7/12/17/22時)")
+        print("   手動発火: launchctl kickstart -k gui/$(id -u)/com.sgnb.brain-tact")
+    if ok2:
+        print(f"✅ ダッシュボード常駐: http://127.0.0.1:8787/")
+    return 0 if (ok1 and ok2) else 1
 
 
 def install_skill(dry: bool = False) -> int:
