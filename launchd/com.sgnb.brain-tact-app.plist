@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sgnb.brain-tact-app</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>export PATH="/Users/shigenoburyuto/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"; exec uv run --directory /Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact brain-tact-app</string>
+  </array>
+
+  <!-- ログイン時にメニューバーアプリを自動起動、落ちたら再起動 -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/state/app.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/state/app-error.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/shigenoburyuto</string>
+  </dict>
+</dict>
+</plist>
