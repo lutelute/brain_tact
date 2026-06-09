@@ -83,12 +83,18 @@ def _record(tool: str, tty: str, payload: dict, reason: str, result: str) -> Non
 
 
 def _guarded_send(tool: str, tty: str, text: str, reason: str,
-                  require_claude: bool) -> str:
-    """共通ガード: 制限チェック → claude在席チェック → 送信 → 記録。"""
-    ok, why = check_limits(tty, tool, CYCLE_ID)
-    if not ok:
-        _record(tool, tty, {"text": text}, reason, f"rejected: {why}")
-        return f"❌ 拒否: {why}"
+                  require_claude: bool, manual: bool = False) -> str:
+    """共通ガード: 制限チェック → claude在席チェック → 送信 → 記録。
+
+    manual=True(ダッシュボード/CLIからの人間操作)はクールダウン・回数制限を
+    スキップする。脳の暴走防止のための制限であり、ユーザー直接の指示には不要。
+    禁止語句チェック・claude在席チェック(安全性)は manual でも維持する。
+    """
+    if not manual:
+        ok, why = check_limits(tty, tool, CYCLE_ID)
+        if not ok:
+            _record(tool, tty, {"text": text}, reason, f"rejected: {why}")
+            return f"❌ 拒否: {why}"
 
     procs = find_claude_processes()
     has_claude = tty in procs
@@ -185,6 +191,34 @@ def run_cycle_now(dry_run: bool = True) -> str:
     return f"巡回完了 (rc={rc}, dry_run={dry_run})。詳細は get_cleanup / brain-tact log で確認。"
 
 
+# --- 実装本体(manualフラグで人間操作/脳操作を分岐) ----------------------
+# manual=True: ダッシュボード/CLIからの人間操作 → クールダウン・回数制限なし
+# manual=False: 脳(cycle)の自動操作 → 全ガードレール適用
+
+def send_impl(tty: str, message: str, reason: str, manual: bool = False) -> str:
+    message = " ".join(message.split())  # 改行・連続空白を畳む
+    if FORBIDDEN_RE.search(message):
+        _record("act_send", tty, {"text": message}, reason, "rejected: forbidden phrase")
+        return "❌ 拒否: メッセージに危険語句が含まれています。defer してユーザーに委ねること"
+    if len(message) > 500:
+        _record("act_send", tty, {"text": message[:100]}, reason, "rejected: too long")
+        return "❌ 拒否: メッセージが長すぎます(500文字まで)"
+    return _guarded_send("act_send", tty, message, reason,
+                         require_claude=True, manual=manual)
+
+
+def approve_impl(tty: str, option: str, reason: str, manual: bool = False) -> str:
+    if option not in ("", "1", "2", "3"):
+        return "❌ 拒否: option は '1'〜'3' または ''(空=Enter)のみ"
+    return _guarded_send("act_approve", tty, option, reason,
+                         require_claude=True, manual=manual)
+
+
+def resume_impl(tty: str, reason: str, manual: bool = False) -> str:
+    return _guarded_send("act_resume", tty, CLAUDE_RESUME_CMD, reason,
+                         require_claude=False, manual=manual)
+
+
 @mcp.tool()
 def act_send(tty: str, message: str, reason: str) -> str:
     """指定ttyのClaudeセッションにメッセージを送信する(送信は6時間に1回まで)。
@@ -196,14 +230,7 @@ def act_send(tty: str, message: str, reason: str) -> str:
         message: 送るテキスト(改行はスペースに変換される)
         reason: なぜ送るのか(監査ログに残る)
     """
-    message = " ".join(message.split())  # 改行・連続空白を畳む
-    if FORBIDDEN_RE.search(message):
-        _record("act_send", tty, {"text": message}, reason, "rejected: forbidden phrase")
-        return "❌ 拒否: メッセージに危険語句が含まれています。defer してユーザーに委ねること"
-    if len(message) > 500:
-        _record("act_send", tty, {"text": message[:100]}, reason, "rejected: too long")
-        return "❌ 拒否: メッセージが長すぎます(500文字まで)"
-    return _guarded_send("act_send", tty, message, reason, require_claude=True)
+    return send_impl(tty, message, reason, manual=False)
 
 
 @mcp.tool()
@@ -215,9 +242,7 @@ def act_approve(tty: str, option: str, reason: str) -> str:
         option: "1"〜"3"、または ""(Enterのみ=デフォルト選択)
         reason: 何をなぜ承認するのか(監査ログに残る)
     """
-    if option not in ("", "1", "2", "3"):
-        return "❌ 拒否: option は '1'〜'3' または ''(空=Enter)のみ"
-    return _guarded_send("act_approve", tty, option, reason, require_claude=True)
+    return approve_impl(tty, option, reason, manual=False)
 
 
 @mcp.tool()
@@ -230,8 +255,7 @@ def act_resume(tty: str, reason: str) -> str:
         tty: 対象TTY
         reason: 復元する理由(監査ログに残る)
     """
-    return _guarded_send("act_resume", tty, CLAUDE_RESUME_CMD, reason,
-                         require_claude=False)
+    return resume_impl(tty, reason, manual=False)
 
 
 @mcp.tool()

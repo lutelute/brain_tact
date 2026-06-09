@@ -267,10 +267,11 @@ class Handler(BaseHTTPRequestHandler):
         # ダッシュボードからの操作はreasonを補う(脳のsuggested_actionsはreason欠落あり)
         if tool in ("act_send", "act_approve", "act_resume"):
             p.setdefault("reason", "ダッシュボード操作")
+        # ダッシュボードは人間操作なので manual=True(クールダウン・回数制限なし)
         fn = {
-            "act_send": actuator.act_send,
-            "act_approve": actuator.act_approve,
-            "act_resume": actuator.act_resume,
+            "act_send": lambda **kw: actuator.send_impl(**kw, manual=True),
+            "act_approve": lambda **kw: actuator.approve_impl(**kw, manual=True),
+            "act_resume": lambda **kw: actuator.resume_impl(**kw, manual=True),
             "resolve_pending": actuator.resolve_pending,
         }.get(tool)
         if fn is None:

@@ -150,3 +150,14 @@ class TestLockDebounce:
         assert not state.should_debounce()  # 初回は実行可
         state.mark_cycle_success()
         assert state.should_debounce()      # 直後は抑止
+
+
+class TestManualBypass:
+    """手動操作(manual=True)はクールダウンをバイパスする検証(check_limitsは脳用)。"""
+    def test_manual_skips_check_limits_logic(self):
+        # check_limits自体は脳用に変更なし(クールダウン拒否)
+        _sent("/dev/ttys001", "act_send", "c1", ago_hours=2.0)
+        ok, _ = state.check_limits("/dev/ttys001", "act_send", "c2")
+        assert not ok  # 脳ならクールダウン拒否
+        # manual経路は_guarded_sendでcheck_limitsを呼ばない(actuator側の分岐)
+        # = 統合はactuatorのmanualフラグで担保(ここではcheck_limitsの脳用挙動のみ確認)

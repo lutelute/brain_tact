@@ -109,6 +109,30 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_send(args: argparse.Namespace) -> int:
+    import os
+    os.environ.setdefault("BRAIN_CYCLE_ID", "cli-manual")
+    from .actuator import send_impl
+    print(send_impl(args.tty, args.message, args.reason or "CLI手動指示", manual=True))
+    return 0
+
+
+def cmd_approve(args: argparse.Namespace) -> int:
+    import os
+    os.environ.setdefault("BRAIN_CYCLE_ID", "cli-manual")
+    from .actuator import approve_impl
+    print(approve_impl(args.tty, args.option, args.reason or "CLI手動承認", manual=True))
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    import os
+    os.environ.setdefault("BRAIN_CYCLE_ID", "cli-manual")
+    from .actuator import resume_impl
+    print(resume_impl(args.tty, args.reason or "CLI手動復元", manual=True))
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .doctor import format_doctor, run_doctor
     checks = run_doctor()
@@ -159,6 +183,23 @@ def main(argv: list[str] | None = None) -> int:
     cup.add_argument("--scan", action="store_true", help="先に再スキャンする")
     cup.add_argument("--json", action="store_true")
     cup.set_defaults(func=cmd_cleanup)
+
+    snp = sub.add_parser("send", help="セッションに指示を送る(手動・制限なし)")
+    snp.add_argument("tty", help="対象TTY(例: /dev/ttys006)")
+    snp.add_argument("message", help="送るメッセージ")
+    snp.add_argument("--reason", help="監査ログに残す理由")
+    snp.set_defaults(func=cmd_send)
+
+    apr = sub.add_parser("approve", help="承認プロンプトに番号を送る(手動)")
+    apr.add_argument("tty")
+    apr.add_argument("option", help="'1'〜'3' または ''(Enter)")
+    apr.add_argument("--reason")
+    apr.set_defaults(func=cmd_approve)
+
+    rsm = sub.add_parser("resume", help="死んだタブで claude --continue を起動(手動)")
+    rsm.add_argument("tty")
+    rsm.add_argument("--reason")
+    rsm.set_defaults(func=cmd_resume)
 
     svp = sub.add_parser("serve", help="ダッシュボードをlocalhostで起動")
     svp.add_argument("--port", type=int, default=8787)

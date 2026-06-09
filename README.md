@@ -6,9 +6,27 @@
 
 | 入口 | 用途 |
 |---|---|
-| **MCP** (`brain`) | Claude Code/アプリから `scan_now` `get_cleanup` `run_cycle_now` `act_*` を呼ぶ。userスコープ登録済み |
-| **CLI** (`brain-tact`) | `scan` `cleanup` `cycle` `serve` `pending` `doctor` `stats` |
-| **ダッシュボード** (`serve`) | localhost:8787 で全状態を見える化。`GET /api/state` はTin/AtelierX統合用API |
+| **MCP** (`brain`) | Claude Code/アプリから `scan_now` `get_cleanup` `run_cycle_now` `act_*` を呼ぶ。userスコープ登録済み(登録後の新セッションで有効) |
+| **CLI** (`brain-tact`) | `scan` `cleanup` `send` `approve` `resume` `cycle` `serve` `pending` `doctor` `stats` |
+| **HTTP API** (`serve`) | localhost:8787。`GET /api/state`(状態+掃除判定) `POST /api/act`(介入) `POST /api/scan`。Tin/AtelierXはこれをfetch |
+
+### 外部から機能を呼ぶ(埋め込み前の統合)
+
+```bash
+# 状態取得(掃除判定込み)
+curl -s http://127.0.0.1:8787/api/state | jq .headline
+
+# セッションに指示を送る(CLI・手動なのでクールダウンなし)
+brain-tact send /dev/ttys006 "pushして締めてください"
+brain-tact approve /dev/ttys007 1        # 承認プロンプトに"1"
+brain-tact resume /dev/ttys003           # 死んだタブを復元
+
+# HTTP経由(Tin/AtelierXのIPCから叩く形)
+curl -s -X POST http://127.0.0.1:8787/api/act \
+  -d '{"tool":"act_send","tty":"/dev/ttys006","message":"pushして"}'
+```
+
+**手動(CLI/ダッシュボード)操作はクールダウン・回数制限をバイパス**(脳の暴走防止用ガードレールは脳の自動巡回にのみ適用)。禁止語句・claude在席チェックは手動でも維持。
 
 ```
 launchd (7/12/17/22時)
