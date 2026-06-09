@@ -64,10 +64,10 @@ def judge_session(rec: dict) -> dict:
     # --- claude不在 -------------------------------------------------------
     if state == "DEAD_SHELL":
         return _j(CLOSEABLE, "claudeが終了している(画面に痕跡のみ)",
-                  "このタブは閉じてOK。続けるなら resume", close_ok=True)
+                  "resume で復元し、改善ループに戻す", close_ok=True)
     if state == "PLAIN_SHELL":
         return _j(CLOSEABLE, "claudeを使っていないシェル",
-                  "用が済んでいれば閉じてOK", close_ok=True)
+                  "改善対象外(claude未起動)", close_ok=True)
 
     # --- ユーザー判断が要る状態(掃除より先に判断) ------------------------
     if state in ("AWAITING_APPROVAL", "AWAITING_QUESTION"):
@@ -96,15 +96,17 @@ def judge_session(rec: dict) -> dict:
         has_work = isinstance(dirty, int) and dirty >= DIRTY_THRESHOLD
 
         if done and not has_work:
-            # 完了宣言あり & 未コミットの成果なし → 片付いている
+            # 完了宣言あり → 鵜呑みにせず批判的に粗を探させる(閉じない)
             return _j(CLOSEABLE,
-                      "完了報告で止まっている(未コミットの成果なし)",
-                      "成果は保全済み。このタブは閉じてOK", close_ok=True)
+                      "完了報告で止まっている",
+                      "批判的にレビューし、粗・改善余地を1つ見つけて次の改善へ",
+                      close_ok=True)
         if done and has_work:
-            # 完了したが未コミット → コミットしてから閉じる
+            # 完了報告だが未コミット → コミットして改善継続
             return _j(NEEDS_HANDOVER,
                       f"完了報告だが未コミット{dirty}件",
-                      "変更をコミット/引き継ぎしてから閉じる", handover=True)
+                      "コミットで成果を保全し、批判的レビューで改善を継続",
+                      handover=True)
         if has_work and (age or 0) >= STALE_MIN:
             # 未コミットを抱えて放置 → 成果喪失リスク
             return _j(NEEDS_HANDOVER,
@@ -168,9 +170,9 @@ def _brief(s: dict) -> dict:
 def _headline(counts: dict, n_close: int, n_handover: int) -> str:
     parts = []
     if n_close:
-        parts.append(f"🧹 閉じてOK {n_close}件")
+        parts.append(f"🔬 要改善 {n_close}件")
     if n_handover:
-        parts.append(f"💾 要引き継ぎ {n_handover}件")
+        parts.append(f"⚠️ 満杯 {n_handover}件")
     parts.append(f"▶ 稼働{counts.get(ACTIVE, 0)}")
     if counts.get(NEEDS_USER):
         parts.append(f"⏸ 要判断{counts[NEEDS_USER]}")

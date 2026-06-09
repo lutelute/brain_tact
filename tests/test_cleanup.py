@@ -115,6 +115,6 @@ class TestSummarize:
         assert len(s["closeable"]) == 2  # dead + done
         assert len(s["needs_handover"]) == 1  # context_full
         assert s["counts"][ACTIVE] == 1
-        assert "閉じてOK" in s["headline"]
+        assert "要改善" in s["headline"]
         # 各セッションにcleanup判定が付与されている
         assert all("cleanup" in x for x in s["sessions"])

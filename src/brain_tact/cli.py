@@ -93,11 +93,11 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
         return 0
     print(f"🧠 {s['headline']}\n")
     if s["closeable"]:
-        print("🧹 閉じてOK:")
+        print("🔬 要改善(完了報告だが批判的に粗を探す):")
         for x in s["closeable"]:
             print(f"   {x['project'] or x['tty']:<18} {x['reason']}")
     if s["needs_handover"]:
-        print("\n💾 要引き継ぎ(閉じる前に保存):")
+        print("\n⚠️ 満杯(コミットで保全し改善継続):")
         for x in s["needs_handover"]:
             print(f"   {x['project'] or x['tty']:<18} {x['reason']}")
     return 0
@@ -179,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     lp.add_argument("--tail", type=int, default=30)
     lp.set_defaults(func=cmd_log)
 
-    cup = sub.add_parser("cleanup", help="掃除判定(閉じてOK/要引き継ぎ)を表示")
+    cup = sub.add_parser("cleanup", help="セッション判定(要改善/満杯/稼働)を表示")
     cup.add_argument("--scan", action="store_true", help="先に再スキャンする")
     cup.add_argument("--json", action="store_true")
     cup.set_defaults(func=cmd_cleanup)

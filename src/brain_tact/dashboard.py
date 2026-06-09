@@ -104,11 +104,11 @@ button:disabled{opacity:.5;cursor:default}
 <div class="wrap">
   <div class="cols">
     <div class="card">
-      <h2>🧹 閉じてOK</h2>
+      <h2>🔬 要改善(完了報告だが粗を探す)</h2>
       <div id="closeable"></div>
     </div>
     <div class="card">
-      <h2>💾 要引き継ぎ(閉じる前に保存)</h2>
+      <h2>⚠️ 満杯(コミットで保全・改善継続)</h2>
       <div id="handover"></div>
     </div>
   </div>
@@ -123,8 +123,8 @@ button:disabled{opacity:.5;cursor:default}
 </div>
 <div id="toast"></div>
 <script>
-const CAT={closeable:'閉じてOK',needs_handover:'要引き継ぎ',needs_user:'要判断',
-  active:'稼働中',resumable:'再開可'};
+const CAT={closeable:'要改善',needs_handover:'満杯',needs_user:'要判断',
+  active:'稼働中',resumable:'改善ループ'};
 let STATE={sessions:[],pending:[]};
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function toast(m){const t=document.getElementById('toast');t.textContent=m;
@@ -141,14 +141,15 @@ function sendTo(tty,proj){
   act({tool:'act_send',tty:tty,message:m.trim(),reason:'dashboard手動指示'})}
 // data属性ボタン群(JSONを属性に埋めない=日本語/引用符で壊れない)
 function btns(tty,proj,cat){
+  const CRIT="自分のプロジェクトを批判的に自己レビューし(完了と思っても必ず粗・改善余地を探す)、最も価値の高い改善を1つ実行して、改善ループを続けてください。閉じないこと。";
   let b=`<button class="btn" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}">💬指示</button>`;
+  if(cat!=='active')
+    b+=`<button class="btn" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}" data-msg="${CRIT}">🔬改善</button>`;
   if(cat==='needs_user')
-    b+=`<button class="btn" data-do="approve" data-tty="${tty}" data-opt="1">✓承認1</button>`+
+    b+=`<button class="btn ghost" data-do="approve" data-tty="${tty}" data-opt="1">✓承認1</button>`+
        `<button class="btn ghost" data-do="approve" data-tty="${tty}" data-opt="2">2</button>`;
   if(cat==='needs_handover')
-    b+=`<button class="btn" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}" data-msg="/引き継ぎ">💾引き継ぎ</button>`;
-  if(cat==='resumable')
-    b+=`<button class="btn" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}" data-msg="進捗を3行で要約し、残作業があれば続行してください">▶続行</button>`;
+    b+=`<button class="btn ghost" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}" data-msg="未コミットの変更をコミットして成果を保全してから、批判的に次の改善を続けてください。閉じないこと。">💾保全</button>`;
   return b}
 async function load(){
   let d;try{d=await (await fetch('/api/state')).json()}catch(e){return}
@@ -171,7 +172,7 @@ async function load(){
   ho.innerHTML=d.needs_handover.length?d.needs_handover.map(x=>
     `<div class="row"><span class="proj">${esc(x.project||'-')}</span>
      <span class="reason">${esc(x.reason)}</span>
-     <button class="btn" data-do="send" data-tty="${x.tty}" data-proj="${esc(x.project||'')}" data-msg="/引き継ぎ">💾引き継ぎ</button>
+     <button class="btn" data-do="send" data-tty="${x.tty}" data-proj="${esc(x.project||'')}" data-msg="未コミットの変更をコミットして成果を保全してから、批判的に次の改善を続けてください。閉じないこと。">💾保全</button>
      <button class="btn ghost" data-do="send" data-tty="${x.tty}" data-proj="${esc(x.project||'')}">💬指示</button></div>`
   ).join(''):'<div class="empty">なし</div>';
 
