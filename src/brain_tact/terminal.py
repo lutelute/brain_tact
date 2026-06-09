@@ -10,6 +10,7 @@
 
 import secrets
 import subprocess
+import time
 from dataclasses import dataclass
 
 
@@ -58,23 +59,39 @@ def _build_script(tab_sep: str, end_sep: str) -> str:
     '''
 
 
-def capture_all_tabs(timeout: float = 60.0) -> list[TabCapture]:
+def capture_all_tabs(timeout: float = 90.0, retries: int = 2) -> list[TabCapture]:
     """全タブの (window_idx, tab_idx, tty, title, busy, contents) を返す。
 
     区切りトークンはランダム化する — brain_tact自身を開発中の画面に
     区切り文字列リテラルが映り込んでも誤パースしないため。
+
+    通常は1秒で返るが、スリープ復帰直後など Terminal.app が一時的に応答
+    遅延するとタイムアウトする(実機: 朝7時のサイクルがこれでクラッシュ)。
+    タイムアウト時は短い待機を挟んでリトライし、もろさを吸収する。
     """
     token = secrets.token_hex(8)
     tab_sep = f"@@@TAB-{token}"
     end_sep = f"@@@END-{token}"
+    script = _build_script(tab_sep, end_sep)
 
-    result = subprocess.run(
-        ["osascript", "-e", _build_script(tab_sep, end_sep)],
-        capture_output=True, text=True, timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"osascript failed: {result.stderr.strip()[:500]}")
-    return _parse(result.stdout, tab_sep, end_sep)
+    last_err = None
+    for attempt in range(retries):
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=timeout,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"osascript failed: {result.stderr.strip()[:500]}")
+            return _parse(result.stdout, tab_sep, end_sep)
+        except subprocess.TimeoutExpired as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(10)  # Terminal.appの一時的高負荷が収まるのを待つ
+    raise RuntimeError(
+        f"osascriptが{retries}回タイムアウト({timeout:.0f}s) — "
+        f"Terminal.appが応答していない可能性"
+    ) from last_err
 
 
 def _parse(raw: str, tab_sep: str, end_sep: str) -> list[TabCapture]:

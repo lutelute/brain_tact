@@ -169,7 +169,15 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         n_exp = expire_pending()
         n_pru = prune_history()
 
-        snapshot = run_scan()
+        # スキャン(osascript)はスリープ復帰直後などに失敗しうる。失敗しても
+        # サイクルごとクラッシュさせず、incident記録して終了し次回に賭ける。
+        try:
+            snapshot = run_scan()
+        except RuntimeError as e:
+            _log_cycle({"event": "scan_failed", "error": str(e)[:200]})
+            record_incident(f"スキャン失敗(次サイクルで再試行): {e}")
+            print(f"⚠️  スキャン失敗: {e}", file=sys.stderr)
+            return 1
         cycle_id = snapshot["cycle_id"]
         slot = time_slot()
 
@@ -267,9 +275,14 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         return 0
 
     except Exception as e:  # noqa: BLE001 — launchd運用では握って一報
-        _log_cycle({"event": "cycle_crashed", "error": repr(e)})
-        record_incident(f"サイクルが例外で停止: {e}")
-        raise
+        # raiseせず正常終了する。raiseするとlaunchd-error.logにトレースが残り、
+        # 次回まで何もできない。incident記録して次の定時に賭ける方が堅い。
+        import traceback
+        _log_cycle({"event": "cycle_crashed", "error": repr(e),
+                    "trace": traceback.format_exc()[-500:]})
+        record_incident(f"サイクルが例外で停止(次サイクルで再試行): {e}")
+        print(f"⚠️  サイクル例外: {e}", file=sys.stderr)
+        return 1
     finally:
         if caffeinate:
             caffeinate.terminate()
