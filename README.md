@@ -1,4 +1,8 @@
-# 🎼 brain_tact
+<p align="center">
+  <img src="assets/banner.jpg" alt="brain_tact — chaos, cooled into tempo" width="100%">
+</p>
+
+# <img src="assets/logo.svg" width="28" align="top"> brain_tact
 
 > **指揮者が、散らかった Claude Code セッションを統率する。**
 > `brain` = 状況を判断する脳 ／ `tact` = 複数を束ねるタクト(指揮棒)
@@ -15,7 +19,7 @@
    触らず  片付け候補   保存促す   /brainで対話
 ```
 
-<sub>🎨 ロゴ制作中 — コンセプト: [design-philosophy](assets/design-philosophy.md) / 生成プロンプト: [logo-prompts](assets/logo-prompts.md)</sub>
+<sub>🎨 ロゴ: 「Conducted Field」— タクト1本が散らばった光点(セッション)を秩序へ resolve する。4案: [A/downbeat](assets/logo-a-downbeat.svg)・[B/tempo](assets/logo-b-tempo.svg)・[C/tip](assets/logo-c-tip.svg)・[D/rows](assets/logo-d-rows.svg) / [デザイン哲学](assets/design-philosophy.md)</sub>
 
 ---
 

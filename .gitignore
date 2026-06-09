@@ -7,3 +7,5 @@ __pycache__/
 .pytest_cache/
 uv.lock
 .claude/
+アプリロゴとバナー.zip
+assets/logo-gallery.html

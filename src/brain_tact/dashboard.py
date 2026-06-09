@@ -47,7 +47,8 @@ def _build_state() -> dict:
 
 PAGE = """<!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8">
-<title>🧠 brain</title>
+<title>🎼 brain_tact</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{color-scheme:dark}
@@ -97,7 +98,7 @@ button:disabled{opacity:.5;cursor:default}
 </style></head>
 <body>
 <header>
-  <h1>🧠 brain</h1>
+  <h1><img src="/favicon.png" width="22" style="vertical-align:-4px;border-radius:5px"> brain_tact</h1>
   <span class="headline" id="headline">読み込み中…</span>
   <span class="meta" id="meta"></span>
 </header>
@@ -238,6 +239,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE, "text/html")
         elif self.path.startswith("/api/state"):
             self._send(200, json.dumps(_build_state(), ensure_ascii=False))
+        elif self.path.startswith("/favicon"):
+            from . import BRAIN_DIR
+            p = BRAIN_DIR / "assets" / "favicon.png"
+            if p.exists():
+                self._send(200, p.read_bytes(), "image/png")
+            else:
+                self._send(404, b"")
         else:
             self._send(404, json.dumps({"error": "not found"}))
 
