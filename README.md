@@ -7,16 +7,16 @@
 > **指揮者が、散らかった Claude Code セッションを統率する。**
 > `brain` = 状況を判断する脳 ／ `tact` = 複数を束ねるタクト(指揮棒)
 
-ターミナルで 20〜30 個の Claude Code を並行運用すると、作業途中のまま放置されたウィンドウが溜まっていく。**brain_tact** はそれを片付ける監督ツール。
+ターミナルで 20〜30 個の Claude Code を並行運用すると、作業途中のまま放置されたウィンドウが溜まっていく。**brain_tact** はそれらを閉じさせず、批判的に改善を促し続ける監督ツール。
 
-定時(朝7/昼12/夕17/夜22時)に全セッションを巡回し、ヘッドレスの Claude が状態を判断する — **掃除ファースト**で、終わった/満杯のセッションを「🧹 閉じてOK」「💾 要引き継ぎ」に仕分け、止まったものには指示を送り、判断が要るものは保留にして、ダッシュボードと LINE に報告する。
+定時(朝7/昼12/夕17/夜22時)に全セッションを巡回し、ヘッドレスの Claude が状態を判断する — **批判的改善ファースト**。「完了」報告を鵜呑みにせず粗・改善余地を指摘して自己改善ループを促し、止まったものは動かし、落ちたものは復元する。**セッションは閉じさせない**。判断が要るものだけ保留にして、ダッシュボードと LINE に報告する。
 
 ```
         🎼 指揮者(brain)
          │ 定時巡回 7/12/17/22時
    ┌─────┼─────┬─────┬─────┐
-  ▶稼働  🧹閉じてOK  💾引き継ぎ  ⏸保留   ← 20-30個のセッションを仕分け
-   触らず  片付け候補   保存促す   /brainで対話
+  ▶稼働  🔬要改善   🔁改善ループ  ⏸保留   ← 完了を疑い、改善を止めさせない
+   触らず  粗を指摘   自己改善促す   /brainで対話
 ```
 
 <sub>🎨 ロゴ: 「Conducted Field」— タクト1本が散らばった光点(セッション)を秩序へ resolve する。4案: [A/downbeat](assets/logo-a-downbeat.svg)・[B/tempo](assets/logo-b-tempo.svg)・[C/tip](assets/logo-c-tip.svg)・[D/rows](assets/logo-d-rows.svg) / [デザイン哲学](assets/design-philosophy.md)</sub>
@@ -29,12 +29,12 @@
 |---|---|
 | **MCP** (`brain`) | Claude Code/アプリから `scan_now` `get_cleanup` `run_cycle_now` `act_*` を呼ぶ。userスコープ登録済み(登録後の新セッションで有効) |
 | **CLI** (`brain-tact`) | `scan` `cleanup` `send` `approve` `resume` `cycle` `serve` `pending` `doctor` `stats` |
-| **HTTP API** (`serve`) | localhost:8787。`GET /api/state`(状態+掃除判定) `POST /api/act`(介入) `POST /api/scan`。Tin/AtelierXはこれをfetch |
+| **HTTP API** (`serve`) | localhost:8787。`GET /api/state`(状態+判定) `POST /api/act`(介入) `POST /api/scan`。Tin/AtelierXはこれをfetch |
 
 ### 外部から機能を呼ぶ(埋め込み前の統合)
 
 ```bash
-# 状態取得(掃除判定込み)
+# 状態取得(判定込み)
 curl -s http://127.0.0.1:8787/api/state | jq .headline
 
 # セッションに指示を送る(CLI・手動なのでクールダウンなし)
@@ -67,12 +67,15 @@ launchd (7/12/17/22時)
 |---|---|
 | RUNNING(スピナーあり) | 触らない |
 | IDLE(最終活動<60分) | 触らない(ユーザー作業中の可能性) |
-| IDLE(放置) | 「進捗要約+残作業の続行」を送信 |
+| **完了報告で停止** | **鵜呑みにせず批判的に粗を指摘 → 次の改善を1つ促す(閉じさせない)** |
+| IDLE(放置) | 「批判的に自己レビューし最も価値ある改善を実行→ループ継続」を送信 |
 | AWAITING_APPROVAL | 安全(読取/編集/ビルド/テスト/commit)なら自動承認、危険(rm -rf/push/sudo/課金)なら保留 |
-| DEAD_SHELL(claude死亡) | `claude --continue` で自動復元 |
+| DEAD_SHELL(claude死亡) | `claude --continue` で**復元**(閉じさせない) |
 | ERROR_RETRYING | 自動回復を待つ(報告のみ) |
 | LIMIT_REACHED | 保留(ユーザー判断) |
 | 2回突いて進展なし | 3ストライク → 保留へ昇格 |
+
+> **方針(重要)**: brainは肯定する脳ではなく、より良くするために**批判する脳**。「閉じて/締めて/clear」は送らない。完了報告こそ改善の起点。
 
 ガードレール(actuatorがコードで強制、プロンプト任せにしない):
 
@@ -106,7 +109,7 @@ PYTHONPATH=src $VENV -m brain_tact.cli install --skill          # /brainスキ�
 | コマンド | 用途 |
 |---|---|
 | `brain-tact scan [--quick] [--json]` | 全タブスキャン+状態分類 |
-| `brain-tact cleanup [--scan] [--json]` | 🧹 掃除判定(閉じてOK/要引き継ぎ)を表示 |
+| `brain-tact cleanup [--scan] [--json]` | 🔬 セッション判定(要改善/満杯/稼働)を表示 |
 | `brain-tact serve [--port N]` | 📊 ダッシュボードをlocalhostで起動 |
 | `brain-tact cycle [--force] [--dry-run] [--model X]` | 巡回サイクル実行 |
 | `brain-tact pending [list\|resolve <id> --note N]` | 保留リスト操作 |
