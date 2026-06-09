@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<script type="text/babel" src="marks.jsx"></script>
+<script type="text/babel" src="lockups.jsx"></script>
+<script type="text/babel">
+function R(){return (<div>
+  <div id="readme" style={{width:1280,height:320}}><BannerReadme/></div>
+  <div id="social" style={{width:1280,height:640}}><BannerSocial/></div>
+</div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<R/>);
+</script>
+</head><body style="margin:0;background:#000"><div id="root"></div></body></html>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.jpg" alt="brain_tact — chaos, cooled into tempo" width="100%">
+  <img src="assets/banner.png" alt="brain_tact — chaos, cooled into tempo" width="100%">
 </p>
 
 # <img src="assets/logo.svg" width="28" align="top"> brain_tact
