@@ -2,14 +2,11 @@
   "mcpServers": {
     "brain-actuator": {
       "type": "stdio",
-      "command": "/Users/shigenoburyuto/.local/bin/uv",
-      "args": [
-        "run",
-        "--directory",
-        "/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact",
-        "brain-actuator-mcp"
-      ],
-      "env": {}
+      "command": "/Users/shigenoburyuto/.venvs/brain_tact/bin/python",
+      "args": ["-m", "brain_tact.actuator"],
+      "env": {
+        "PYTHONPATH": "/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/src"
+      }
     }
   }
 }

@@ -1,5 +1,7 @@
 #!/bin/bash
 # brain-cycle.sh — launchdエントリ。実体は Python(brain-tact cycle)。
-# /bin/bash経由なのはwatchdogとTCC(オートメーション権限)の帰属を揃えるため。
+# iCloud(~/Documents)同期が uv の editable .pth を壊すため、uv run ではなく
+# iCloud外の venv python を直接呼ぶ + PYTHONPATH=src で二重に堅牢化。
 export PATH="/Users/shigenoburyuto/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-exec uv run --directory /Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact brain-tact cycle "$@"
+export PYTHONPATH="/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/src"
+exec /Users/shigenoburyuto/.venvs/brain_tact/bin/python -m brain_tact.cli cycle "$@"

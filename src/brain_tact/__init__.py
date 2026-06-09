@@ -39,6 +39,25 @@ def ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
+def self_python() -> list[str]:
+    """このパッケージを実行する python コマンド(配列)。
+
+    iCloud(~/Documents)同期が uv の editable .pth を壊すため、サブプロセスでは
+    uv run ではなく現在の実行 python を直接呼び、PYTHONPATH=src は環境で渡す。
+    """
+    import sys
+    return [sys.executable]
+
+
+def src_env() -> dict:
+    """PYTHONPATH=src を含む環境(サブプロセス用)。"""
+    env = dict(os.environ)
+    src = str(BRAIN_DIR / "src")
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src}:{existing}" if existing else src
+    return env
+
+
 def claude_bin() -> str:
     """claude CLIの実体パス(launchd環境のPATH細りに備えフォールバック付き)。"""
     found = shutil.which("claude")

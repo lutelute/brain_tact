@@ -14,7 +14,7 @@ import threading
 
 import rumps
 
-from . import BRAIN_DIR, CYCLE_LOG, LATEST_JSON
+from . import BRAIN_DIR, CYCLE_LOG, LATEST_JSON, self_python, src_env
 from .state import load_pending, resolve_pending
 
 REFRESH_SEC = 30
@@ -188,9 +188,8 @@ class BrainApp(rumps.App):
     def _do_scan(self, _sender) -> None:
         def work():
             subprocess.run(
-                ["uv", "run", "--directory", str(BRAIN_DIR),
-                 "brain-tact", "scan", "--quick"],
-                capture_output=True, timeout=120,
+                [*self_python(), "-m", "brain_tact.cli", "scan", "--quick"],
+                capture_output=True, timeout=120, cwd=BRAIN_DIR, env=src_env(),
             )
             self._refresh(None)
         threading.Thread(target=work, daemon=True).start()
@@ -207,9 +206,8 @@ class BrainApp(rumps.App):
 
         def work():
             subprocess.run(
-                ["uv", "run", "--directory", str(BRAIN_DIR),
-                 "brain-tact", "cycle", "--force"],
-                capture_output=True, timeout=1200,
+                [*self_python(), "-m", "brain_tact.cli", "cycle", "--force"],
+                capture_output=True, timeout=1200, cwd=BRAIN_DIR, env=src_env(),
             )
             self._refresh(None)
         threading.Thread(target=work, daemon=True).start()

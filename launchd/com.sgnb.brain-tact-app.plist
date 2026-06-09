@@ -9,7 +9,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>export PATH="/Users/shigenoburyuto/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"; exec uv run --directory /Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact brain-tact-app</string>
+    <string>export PYTHONPATH="/Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact/src"; exec /Users/shigenoburyuto/.venvs/brain_tact/bin/python -m brain_tact.app</string>
   </array>
 
   <!-- ログイン時にメニューバーアプリを自動起動、落ちたら再起動 -->

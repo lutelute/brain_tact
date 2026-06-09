@@ -81,17 +81,21 @@ launchd (7/12/17/22時)
 ## セットアップ
 
 ```bash
-cd /Users/shigenoburyuto/Documents/GitHub/tool_dev_SGNB/brain_tact
-uv sync
+cd <brain_tact>
+# .venv は iCloud(~/Documents)外に作る ← 重要(下記「既知の罠」)
+UV_PROJECT_ENVIRONMENT="$HOME/.venvs/brain_tact" uv sync
 
-# 動作確認
-uv run brain-tact scan            # 全タブの状態分類を確認
-uv run brain-tact cycle --force --dry-run   # 脳のドライラン(LINE送信なし)
-
-# 本登録
-uv run brain-tact install --launchd   # launchd登録(7/12/17/22時)
-uv run brain-tact install --skill     # /brainスキルを ~/.claude/skills/ へ
+VENV="$HOME/.venvs/brain_tact/bin/python"
+PYTHONPATH=src $VENV -m brain_tact.cli scan                     # 状態分類を確認
+PYTHONPATH=src $VENV -m brain_tact.cli cycle --force --dry-run  # 脳のドライラン
+PYTHONPATH=src $VENV -m brain_tact.cli install --launchd        # launchd登録(7/12/17/22時)
+PYTHONPATH=src $VENV -m brain_tact.cli install --skill          # /brainスキル配置
 ```
+
+> **既知の罠(iCloud)**: `~/Documents` は iCloud 同期対象で、その配下に `.venv` を置くと
+> uv の editable `.pth` が競合コピー(`brain_tact 2.pth`)で壊され `ModuleNotFoundError` が
+> 断続発生する。**`.venv` は iCloud外(`~/.venvs/`)に置き、起動は `uv run` ではなく
+> venv の python を直接呼ぶ**(全 launchd / MCP / CLI 経路でこの方式に統一済み)。
 
 ## コマンド
 
