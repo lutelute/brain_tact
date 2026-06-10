@@ -120,7 +120,7 @@ PYTHONPATH=src $VENV -m brain_tact.cli install --skill          # /brainスキ�
 | `brain-tact stats [--days N]` | KPI(介入成功率・稼働率推移) |
 | `brain-tact install [--launchd] [--skill] [--dry-run]` | インストール |
 
-> メニューバーアプリ(`brain-tact-app`, rumps製)もあるが、本命は **ダッシュボード(`serve`)** と **MCP(`brain`)**。Tin/AtelierXからは `GET /api/state` か MCP を叩いて統合する。
+> 本命は **ダッシュボード(`serve`)** と **MCP(`brain`)**。Tin/AtelierXからは `GET /api/state` か MCP を叩いて統合する。メニューバー常駐は Electron シェル(下記)が担う。
 
 ## デスクトップアプリ(.app)
 
