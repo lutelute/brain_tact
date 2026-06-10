@@ -112,6 +112,47 @@ def _run_brain(prompt: str, cycle_id: str, model: str, dry_run: bool) -> dict:
     return out
 
 
+def _transient_failure(brain: dict) -> str | None:
+    """脳の結果がリトライに値する一時障害なら理由を返す(純関数)。
+
+    - MCP_LOAD_FAILURE: 高負荷時にMCPサーバー起動が遅れツール無しで脳が自主終了
+    - is_error: API接続断など(実例: ECONNRESETで17時巡回が丸ごと欠けた 2026-06-10)
+    """
+    if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
+        return "MCPツールのロード失敗"
+    if brain.get("is_error"):
+        tail = (brain.get("result_text") or brain.get("stderr") or "").strip()[-120:]
+        return f"脳がエラー終了: {tail}" if tail else "脳がエラー終了"
+    return None
+
+
+def _run_brain_with_retry(prompt: str, cycle_id: str, model: str,
+                          dry_run: bool) -> dict | None:
+    """脳を起動し、一時障害なら30秒置いて1回だけ再試行する。
+
+    2回とも失敗したらincident記録してNoneを返す(サイクルは静かに終了し
+    次の定時に賭ける)。TimeoutExpiredはここでは握らず呼び出し側で処理。
+    """
+    brain = _run_brain(prompt, cycle_id, model, dry_run)
+    why = _transient_failure(brain)
+    if why is None:
+        return brain
+    _log_cycle({"event": "brain_retry", "cycle_id": cycle_id, "why": why,
+                "result_tail": (brain.get("result_text") or "")[-300:],
+                "stderr": (brain.get("stderr") or "")[-300:]})
+    print(f"⚠️  {why} → 30秒後にリトライ", file=sys.stderr)
+    time.sleep(30)
+    brain = _run_brain(prompt, cycle_id, model, dry_run)
+    why = _transient_failure(brain)
+    if why is None:
+        return brain
+    record_incident(f"{why}(リトライも失敗・巡回未実施)")
+    _log_cycle({"event": "brain_failed_final", "cycle_id": cycle_id, "why": why,
+                "result_tail": (brain.get("result_text") or "")[-300:],
+                "stderr": (brain.get("stderr") or "")[-300:]})
+    return None
+
+
 def record_incident(error: str) -> None:
     """サイクル失敗を障害ログに記録する(LINEには流さない)。
 
@@ -214,26 +255,14 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
               f"(dry_run={dry_run}, model={model})", file=sys.stderr)
 
         try:
-            brain = _run_brain(prompt, cycle_id, model, dry_run)
-            # 脳がツール疎通確認に失敗した場合(手順0)は30秒置いて1回だけ再試行
-            if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
-                _log_cycle({"event": "mcp_load_failure_retry", "cycle_id": cycle_id,
-                            "result_tail": (brain.get("result_text") or "")[-300:],
-                            "stderr": (brain.get("stderr") or "")[-300:]})
-                print("⚠️  MCPロード失敗 → 30秒後にリトライ", file=sys.stderr)
-                time.sleep(30)
-                brain = _run_brain(prompt, cycle_id, model, dry_run)
-                if "MCP_LOAD_FAILURE" in (brain.get("result_text") or ""):
-                    record_incident("MCPツールのロードに2回失敗(巡回未実施)")
-                    _log_cycle({"event": "mcp_load_failure_final",
-                                "cycle_id": cycle_id,
-                                "result_tail": (brain.get("result_text") or "")[-300:],
-                                "stderr": (brain.get("stderr") or "")[-300:]})
-                    return 1
+            # 一時障害(MCPロード失敗・API接続断)は内部で1回リトライされる
+            brain = _run_brain_with_retry(prompt, cycle_id, model, dry_run)
         except subprocess.TimeoutExpired:
             _log_cycle({"event": "brain_timeout", "cycle_id": cycle_id,
                         "timeout_sec": BRAIN_TIMEOUT_SEC})
             record_incident(f"脳が{BRAIN_TIMEOUT_SEC // 60}分でタイムアウト")
+            return 1
+        if brain is None:
             return 1
 
         duration = (datetime.now() - started).total_seconds()
@@ -243,7 +272,7 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             "slot": slot,
             "dry_run": dry_run,
             "model": model,
-            "ok": not brain.get("is_error"),
+            "ok": True,  # エラー終了は_run_brain_with_retryがNoneで弾いた後
             "duration_s": round(duration, 1),
             "cost_usd": brain.get("cost_usd"),
             "num_turns": brain.get("num_turns"),
@@ -251,11 +280,6 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             "pruned_history": n_pru,
             "result_tail": (brain.get("result_text") or "")[-800:],
         })
-
-        if brain.get("is_error"):
-            record_incident(f"脳がエラー終了: {(brain.get('stderr') or '')[:150]}")
-            print(f"❌ 脳がエラー終了 ({duration:.0f}s)", file=sys.stderr)
-            return 1
 
         # dry-runは本番成功とみなさない(last_successを進めると直後の定時発火が
         # デバウンスで誤スキップされる — 07:00発火が2分差で抑止された実例あり)

@@ -121,7 +121,7 @@ def run_doctor() -> list[dict]:
         bad = []
         for r in events[last_ok + 1:]:
             ev = r.get("event", "")
-            if ev in ("cycle_crashed", "brain_timeout",
+            if ev in ("cycle_crashed", "brain_timeout", "brain_failed_final",
                       "mcp_load_failure_final") or r.get("ok") is False:
                 bad.append(f"{r.get('ts', '?')[:16]} {ev or 'cycle_failed'}")
         if bad:
