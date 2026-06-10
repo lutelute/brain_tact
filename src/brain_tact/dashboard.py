@@ -13,6 +13,7 @@ import json
 import os
 import socketserver
 import threading
+import time
 from http.server import BaseHTTPRequestHandler
 
 from . import LATEST_JSON
@@ -134,7 +135,7 @@ async function act(p){
   toast('送信中…');
   const r=await fetch('/api/act',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(p)});
-  const j=await r.json();toast(j.result||j.error||'done');setTimeout(load,800)}
+  const j=await r.json();toast(j.result||j.error||'done');setTimeout(refresh,800)}
 // 任意指示(prompt入力)
 function sendTo(tty,proj){
   const m=prompt('「'+(proj||tty)+'」に送る指示を入力:','');
@@ -152,8 +153,7 @@ function btns(tty,proj,cat){
   if(cat==='needs_handover')
     b+=`<button class="btn ghost" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}" data-msg="未コミットの変更をコミットして成果を保全してから、批判的に次の改善を続けてください。閉じないこと。">💾保全</button>`;
   return b}
-async function load(){
-  let d;try{d=await (await fetch('/api/state')).json()}catch(e){return}
+function render(d){
   STATE=d;
   document.getElementById('headline').textContent=d.headline||'';
   document.getElementById('meta').textContent=
@@ -217,7 +217,12 @@ document.addEventListener('click',e=>{
     act({...sa.args,tool:sa.tool,reason:'dashboard:'+(sa.label||sa.tool),_resolve:p.id});
   }
 });
-load();setInterval(load,15000);
+// act 後の即時反映用(pending解決などは latest.json mtime を変えないため)
+async function refresh(){try{render(await (await fetch('/api/state')).json())}catch(_){}}
+// ポーリング廃止 → SSE。接続時に現在状態が即届き、以降は変化時のみ push される
+const _es=new EventSource('/events');
+_es.onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}};
+_es.onerror=()=>{};  // EventSource は自動再接続する
 </script>
 </body></html>"""
 
@@ -239,6 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE, "text/html")
         elif self.path.startswith("/api/state"):
             self._send(200, json.dumps(_build_state(), ensure_ascii=False))
+        elif self.path.startswith("/events"):
+            self._sse()
         elif self.path.startswith("/favicon"):
             from . import BRAIN_DIR
             p = BRAIN_DIR / "assets" / "favicon.png"
@@ -248,6 +255,34 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b"")
         else:
             self._send(404, json.dumps({"error": "not found"}))
+
+    def _sse(self):
+        """Server-Sent Events: latest.json が変化した時だけ状態をpushする。
+
+        クライアント側のポーリング(15秒ごとの fetch)を廃止し、1本の接続を
+        保持して変化時のみ更新する。サーバー内は2秒ごとに mtime を stat する
+        だけ(軽量)で、重い _build_state は変化時しか呼ばない。
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        last_mtime = None
+        try:
+            while True:
+                mtime = LATEST_JSON.stat().st_mtime if LATEST_JSON.exists() else 0.0
+                if mtime != last_mtime:
+                    last_mtime = mtime
+                    payload = json.dumps(_build_state(), ensure_ascii=False)
+                    self.wfile.write(f"data: {payload}\n\n".encode())
+                else:
+                    self.wfile.write(b": keepalive\n\n")  # 接続維持コメント
+                self.wfile.flush()
+                time.sleep(2)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return  # クライアント切断
 
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("Content-Length", 0))
