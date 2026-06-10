@@ -18,7 +18,7 @@ def proc(cpu: float = 3.0) -> ClaudeProc:
     return ClaudeProc(
         pid=12345, tty="/dev/ttys099", cpu_pct=cpu,
         etime="01:00:00", etime_min=60.0,
-        lstart="Sun Jun 8 01:00:00 2026", cmd="claude",
+        cmd="claude",
     )
 
 

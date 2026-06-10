@@ -9,6 +9,7 @@
   basename一致なので誤検出しない
 """
 
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -20,7 +21,6 @@ class ClaudeProc:
     cpu_pct: float      # 0.0=アイドル傾向 / 1.4〜8 =活動中(実測)
     etime: str          # ps表記のまま(例 01:34:29)
     etime_min: float
-    lstart: str
     cmd: str
     cwd: str | None = None
 
@@ -39,20 +39,26 @@ def _etime_to_min(etime: str) -> float:
 
 
 def find_claude_processes() -> dict[str, ClaudeProc]:
-    """tty(/dev/ttysNNN) -> ClaudeProc。cwdも解決済みで返す。"""
+    """tty(/dev/ttysNNN) -> ClaudeProc。cwdも解決済みで返す。
+
+    psにlstartを含めない — lstartはロケール依存で(日本語環境は
+    「水 6/10 21:29:07 2026」=4トークン、ただし日付1桁の日は「6/ 8」が
+    割れて5トークン)、トークン数固定のパースが毎月10日以降に静かに壊れた
+    実バグの教訓。判定に未使用のフィールドだったため出力ごと外し、
+    防御としてロケールもCに固定する。
+    """
     result = subprocess.run(
-        ["ps", "-axww", "-o", "pid=,tty=,pcpu=,etime=,lstart=,command="],
+        ["ps", "-axww", "-o", "pid=,tty=,pcpu=,etime=,command="],
         capture_output=True, text=True, timeout=15,
+        env={**os.environ, "LC_ALL": "C", "LANG": "C"},
     )
     procs: dict[str, ClaudeProc] = {}
     for line in result.stdout.splitlines():
-        # pid tty pcpu etime + lstart(5トークン: 曜 月 日 時刻 年) + command(残り)
-        t = line.split(None, 9)
-        if len(t) < 10:
+        # pid tty pcpu etime + command(残り)
+        t = line.split(None, 4)
+        if len(t) < 5:
             continue
-        pid_s, tty, pcpu, etime = t[0], t[1], t[2], t[3]
-        lstart = " ".join(t[4:9])
-        cmd = t[9]
+        pid_s, tty, pcpu, etime, cmd = t
 
         argv = cmd.split()
         if not argv:
@@ -71,7 +77,6 @@ def find_claude_processes() -> dict[str, ClaudeProc]:
                 cpu_pct=float(pcpu),
                 etime=etime,
                 etime_min=_etime_to_min(etime),
-                lstart=lstart,
                 cmd=cmd,
             )
         except ValueError:
