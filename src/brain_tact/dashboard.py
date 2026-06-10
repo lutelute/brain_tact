@@ -11,14 +11,33 @@ stdlib http.server のみ(依存追加なし)。
 
 import json
 import os
+import secrets
 import socketserver
 import threading
 import time
 from http.server import BaseHTTPRequestHandler
 
-from . import LATEST_JSON
+from . import LATEST_JSON, PENDING_JSON, STATE_DIR, ensure_dirs
 
 DEFAULT_PORT = 8787
+TOKEN_FILE = STATE_DIR / "dashboard-token"
+
+
+def _get_token() -> str:
+    """POST保護用トークン(初回起動時に生成してstate/に保存)。
+
+    127.0.0.1バインドでもブラウザの悪意ページからのfetch(CSRF)は届く。
+    カスタムヘッダ X-Brain-Token を必須にするとクロスオリジンPOSTは
+    preflightで遮断される(サーバーはOPTIONS/CORSに応えない)。
+    ローカルの正当なクライアント(Tin/AtelierX/curl)はこのファイルを読んで付ける。
+    """
+    if TOKEN_FILE.exists():
+        return TOKEN_FILE.read_text().strip()
+    ensure_dirs()
+    token = secrets.token_hex(16)
+    TOKEN_FILE.write_text(token)
+    TOKEN_FILE.chmod(0o600)
+    return token
 
 
 def _build_state() -> dict:
@@ -84,6 +103,7 @@ h1{font-size:18px;margin:0}
 .b-needs_user{background:#5a2d2d;color:#f0a0a0}
 .b-active{background:#24303f;color:#8fb8e6}
 .b-resumable{background:#3a3550;color:#c4b0e6}
+.b-ignored{background:#2a2e36;color:#7b8290}
 .empty{color:#6b7280;font-style:italic;padding:6px 2px}
 .sess{font-size:13px}
 .prow{padding:9px 10px;border-radius:8px;background:#21252c;margin-bottom:7px}
@@ -126,14 +146,16 @@ button:disabled{opacity:.5;cursor:default}
 <div id="toast"></div>
 <script>
 const CAT={closeable:'要改善',needs_handover:'満杯',needs_user:'要判断',
-  active:'稼働中',resumable:'改善ループ'};
+  active:'稼働中',resumable:'改善ループ',ignored:'対象外'};
 let STATE={sessions:[],pending:[]};
+const TOKEN='__BRAIN_TOKEN__';  // 配信時にサーバーが埋める(POST保護用)
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function toast(m){const t=document.getElementById('toast');t.textContent=m;
   t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500)}
 async function act(p){
   toast('送信中…');
-  const r=await fetch('/api/act',{method:'POST',headers:{'Content-Type':'application/json'},
+  const r=await fetch('/api/act',{method:'POST',
+    headers:{'Content-Type':'application/json','X-Brain-Token':TOKEN},
     body:JSON.stringify(p)});
   const j=await r.json();toast(j.result||j.error||'done');setTimeout(refresh,800)}
 // 任意指示(prompt入力)
@@ -144,6 +166,7 @@ function sendTo(tty,proj){
 // data属性ボタン群(JSONを属性に埋めない=日本語/引用符で壊れない)
 function btns(tty,proj,cat){
   const CRIT="自分のプロジェクトを批判的に自己レビューし(完了と思っても必ず粗・改善余地を探す)、最も価値の高い改善を1つ実行して、改善ループを続けてください。閉じないこと。";
+  if(cat==='ignored')return '';
   let b=`<button class="btn" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}">💬指示</button>`;
   if(cat!=='active')
     b+=`<button class="btn" data-do="send" data-tty="${tty}" data-proj="${esc(proj||'')}" data-msg="${CRIT}">🔬改善</button>`;
@@ -239,9 +262,18 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _host_ok(self) -> bool:
+        """DNS rebinding対策: Hostがlocalhost系以外なら拒否する。"""
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+        return host in ("127.0.0.1", "localhost", "[::1]")
+
     def do_GET(self):  # noqa: N802
+        if not self._host_ok():
+            self._send(403, json.dumps({"error": "bad host"}))
+            return
         if self.path == "/" or self.path.startswith("/index"):
-            self._send(200, PAGE, "text/html")
+            self._send(200, PAGE.replace("__BRAIN_TOKEN__", _get_token()),
+                       "text/html")
         elif self.path.startswith("/api/state"):
             self._send(200, json.dumps(_build_state(), ensure_ascii=False))
         elif self.path.startswith("/events"):
@@ -257,11 +289,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, json.dumps({"error": "not found"}))
 
     def _sse(self):
-        """Server-Sent Events: latest.json が変化した時だけ状態をpushする。
+        """Server-Sent Events: latest.json / pending.json が変化した時だけpushする。
 
         クライアント側のポーリング(15秒ごとの fetch)を廃止し、1本の接続を
         保持して変化時のみ更新する。サーバー内は2秒ごとに mtime を stat する
         だけ(軽量)で、重い _build_state は変化時しか呼ばない。
+        pending.json も監視対象 — /brain やCLIで保留を解決した場合は
+        latest.json が動かないため、片方だけ見ていると画面が古いままになる。
         """
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -269,12 +303,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        last_mtime = None
+
+        def watch_key() -> tuple:
+            return tuple(
+                f.stat().st_mtime if f.exists() else 0.0
+                for f in (LATEST_JSON, PENDING_JSON)
+            )
+
+        last_key = None
         try:
             while True:
-                mtime = LATEST_JSON.stat().st_mtime if LATEST_JSON.exists() else 0.0
-                if mtime != last_mtime:
-                    last_mtime = mtime
+                key = watch_key()
+                if key != last_key:
+                    last_key = key
                     payload = json.dumps(_build_state(), ensure_ascii=False)
                     self.wfile.write(f"data: {payload}\n\n".encode())
                 else:
@@ -285,6 +326,15 @@ class Handler(BaseHTTPRequestHandler):
             return  # クライアント切断
 
     def do_POST(self):  # noqa: N802
+        if not self._host_ok():
+            self._send(403, json.dumps({"error": "bad host"}))
+            return
+        # CSRF対策: ブラウザのクロスオリジンfetchはカスタムヘッダを付けられない
+        # (preflightされ、CORS非対応の本サーバーでは必ず失敗する)
+        if self.headers.get("X-Brain-Token") != _get_token():
+            self._send(403, json.dumps(
+                {"error": "X-Brain-Token required (state/dashboard-token)"}))
+            return
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b"{}"
         try:

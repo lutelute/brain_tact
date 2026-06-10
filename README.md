@@ -42,8 +42,10 @@ brain-tact send /dev/ttys006 "pushして締めてください"
 brain-tact approve /dev/ttys007 1        # 承認プロンプトに"1"
 brain-tact resume /dev/ttys003           # 死んだタブを復元
 
-# HTTP経由(Tin/AtelierXのIPCから叩く形)
+# HTTP経由(Tin/AtelierXのIPCから叩く形)。POSTは X-Brain-Token 必須
+# (トークンは state/dashboard-token に自動生成。ブラウザCSRF対策)
 curl -s -X POST http://127.0.0.1:8787/api/act \
+  -H "X-Brain-Token: $(cat state/dashboard-token)" \
   -d '{"tool":"act_send","tty":"/dev/ttys006","message":"pushして"}'
 ```
 
