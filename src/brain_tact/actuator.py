@@ -70,7 +70,8 @@ def _send_to_tab(tty: str, command: str) -> bool:
     return result.stdout.strip().lower() == "true"
 
 
-def _record(tool: str, tty: str, payload: dict, reason: str, result: str) -> None:
+def _record(tool: str, tty: str, payload: dict, reason: str, result: str,
+            extra: dict | None = None) -> None:
     log_action({
         "cycle_id": CYCLE_ID,
         "tool": tool,
@@ -79,6 +80,7 @@ def _record(tool: str, tty: str, payload: dict, reason: str, result: str) -> Non
         "reason": reason,
         "result": result,
         "dry_run": DRY_RUN,
+        **(extra or {}),
     })
 
 
@@ -106,12 +108,23 @@ def _guarded_send(tool: str, tty: str, text: str, reason: str,
         _record(tool, tty, {"text": text}, reason, "rejected: claude already running")
         return f"❌ 拒否: {tty} ではclaudeが稼働中です。act_resume は不要です"
 
+    # 介入効果のgit裏取り(verify)用に、送信時点のgit状態を監査ログへ残す。
+    # 次サイクルのverifyが「コミットが増えた/dirtyが減った」を比較できる
+    git_extra: dict = {}
+    proc = procs.get(tty)
+    if proc and proc.cwd:
+        from .gitinfo import git_context
+        g = git_context(proc.cwd)
+        if g:
+            git_extra = {"cwd": proc.cwd, "git_before": g}
+
     if DRY_RUN:
-        _record(tool, tty, {"text": text}, reason, "sent")
+        _record(tool, tty, {"text": text}, reason, "sent", extra=git_extra)
         return f"🧪 DRY-RUN: {tty} への送信を記録しました(実送信なし)"
 
     sent = _send_to_tab(tty, text)
-    _record(tool, tty, {"text": text}, reason, "sent" if sent else "failed: tab not found")
+    _record(tool, tty, {"text": text}, reason,
+            "sent" if sent else "failed: tab not found", extra=git_extra)
     if sent:
         return f"✅ {tty} に送信しました"
     return f"❌ {tty} のタブが見つかりません(閉じられた可能性)"

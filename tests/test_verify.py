@@ -85,3 +85,57 @@ def test_summarize():
           {"result": "no_change"}]
     assert summarize_outcomes(rs) == "前回介入3件: 効果2 / 不発1"
     assert summarize_outcomes([]) == ""
+
+
+class TestGitProgress:
+    """C1: 介入の「動いた」と「価値を生んだ(実コミット)」を区別する裏取り。"""
+
+    def _action(self, dirty=10, unix=1000, cwd="/repo"):
+        return {"tool": "act_send", "ts": _ts(30), "cwd": cwd,
+                "git_before": {"dirty": dirty, "last_commit_unix": unix}}
+
+    def _session(self, dirty=10, unix=1000, cwd="/repo"):
+        s = session("IDLE")
+        s["cwd"] = cwd
+        s["git"] = {"dirty": dirty, "last_commit_unix": unix}
+        return s
+
+    def test_committed_detected(self):
+        from brain_tact.verify import _git_progress
+        p = _git_progress(self._action(unix=1000), self._session(unix=2000))
+        assert p["committed"] is True
+
+    def test_no_commit(self):
+        from brain_tact.verify import _git_progress
+        p = _git_progress(self._action(unix=1000), self._session(unix=1000))
+        assert p["committed"] is False
+
+    def test_dirty_delta(self):
+        from brain_tact.verify import _git_progress
+        p = _git_progress(self._action(dirty=12), self._session(dirty=3))
+        assert p["dirty_delta"] == -9
+
+    def test_cwd_mismatch_returns_none(self):
+        from brain_tact.verify import _git_progress
+        p = _git_progress(self._action(cwd="/repo-a"), self._session(cwd="/repo-b"))
+        assert p is None
+
+    def test_no_git_before_returns_none(self):
+        from brain_tact.verify import _git_progress
+        a = {"tool": "act_send", "ts": _ts(30)}
+        assert _git_progress(a, self._session()) is None
+
+    def test_verify_record_includes_git_progress(self):
+        state.log_action({
+            "ts": _ts(60), "cycle_id": "c1", "tool": "act_send",
+            "tty": "/dev/ttys001", "result": "sent", "cwd": "/repo",
+            "git_before": {"dirty": 5, "last_commit_unix": 1000}})
+        snap = {"cycle_id": "c2", "sessions": [self._session(dirty=0, unix=2000)]}
+        snap["sessions"][0]["state_hint"] = "RUNNING"
+        r = verify_interventions(snap)
+        assert r[0]["git_progress"] == {"committed": True, "dirty_delta": -5}
+
+    def test_summarize_includes_commits(self):
+        rs = [{"result": "reactivated", "git_progress": {"committed": True}},
+              {"result": "reactivated"}]
+        assert "実コミット1" in summarize_outcomes(rs)

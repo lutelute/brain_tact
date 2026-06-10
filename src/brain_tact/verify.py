@@ -13,6 +13,33 @@ VERIFY_WINDOW_HOURS = 26.0   # これより古い介入は検証しない(1日+�
 JSONL_ADVANCE_GRACE = 5.0    # 介入後この秒数以上jsonlが進んでいたら「動いた」
 
 
+def _git_progress(action: dict, session: dict | None) -> dict | None:
+    """介入後にgitの実変化(コミット/dirty減)があったかを比較する(純関数)。
+
+    「reactivated=動いた」と「価値を生んだ」は別物 — 改善ループが空回りして
+    いないかの客観シグナル。介入時のgit_before(actuatorが記録)と現スナップ
+    ショットのgitを、cwdが一致する場合のみ比較する(cd等で別repoなら不明扱い)。
+    """
+    before = action.get("git_before")
+    if not before or session is None:
+        return None
+    if action.get("cwd") and session.get("cwd") \
+            and action["cwd"] != session["cwd"]:
+        return None  # 介入時と別の作業ディレクトリ(比較不能)
+    now = session.get("git")
+    if not now:
+        return None
+
+    progress: dict = {}
+    b_unix, n_unix = before.get("last_commit_unix"), now.get("last_commit_unix")
+    if b_unix is not None and n_unix is not None:
+        progress["committed"] = n_unix > b_unix
+    b_dirty, n_dirty = before.get("dirty"), now.get("dirty")
+    if isinstance(b_dirty, int) and isinstance(n_dirty, int):
+        progress["dirty_delta"] = n_dirty - b_dirty
+    return progress or None
+
+
 def _judge(action: dict, session: dict | None) -> str:
     """介入の結果を判定する: reactivated / no_change / worse / unknown。"""
     if session is None:
@@ -58,7 +85,8 @@ def verify_interventions(snapshot: dict) -> list[dict]:
     by_tty = {s["tty"]: s for s in snapshot.get("sessions", [])}
     results = []
     for action in targets:
-        outcome = _judge(action, by_tty.get(action.get("tty")))
+        sess = by_tty.get(action.get("tty"))
+        outcome = _judge(action, sess)
         rec = {
             "cycle_id": snapshot.get("cycle_id"),
             "tool": "verify",
@@ -68,21 +96,28 @@ def verify_interventions(snapshot: dict) -> list[dict]:
             "reason": f"{action.get('tool')} ({action.get('ts')}) の効果検証",
             "result": outcome,
         }
+        git_progress = _git_progress(action, sess)
+        if git_progress is not None:
+            rec["git_progress"] = git_progress
         log_action(rec)
         results.append(rec)
     return results
 
 
 def summarize_outcomes(results: list[dict]) -> str:
-    """LINEレポート用の一行サマリ(例: '前回介入3件: 効果2 / 不発1')。"""
+    """LINEレポート用の一行サマリ(例: '前回介入3件: 効果2 / 不発1 / 実コミット1')。"""
     if not results:
         return ""
     ok = sum(1 for r in results if r["result"] == "reactivated")
     dud = sum(1 for r in results if r["result"] == "no_change")
     worse = sum(1 for r in results if r["result"] == "worse")
+    committed = sum(1 for r in results
+                    if (r.get("git_progress") or {}).get("committed"))
     parts = [f"効果{ok}"]
     if dud:
         parts.append(f"不発{dud}")
     if worse:
         parts.append(f"悪化{worse}")
+    if committed:
+        parts.append(f"実コミット{committed}")
     return f"前回介入{len(results)}件: " + " / ".join(parts)

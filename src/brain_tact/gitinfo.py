@@ -23,7 +23,11 @@ def _git(cwd: str, *args: str) -> str | None:
 
 
 def git_context(cwd: str) -> dict | None:
-    """gitリポジトリなら {branch, dirty, last_commit_age_h} を返す。"""
+    """gitリポジトリなら {branch, dirty, last_commit_age_h, last_commit_unix} を返す。
+
+    last_commit_unix(epoch秒)は介入効果のgit裏取り(verify)用 —
+    「介入時より新しいコミットがあるか」を絶対時刻で比較する。
+    """
     if not cwd or not (Path(cwd) / ".git").exists():
         return None
 
@@ -32,12 +36,15 @@ def git_context(cwd: str) -> dict | None:
     dirty = len(status.splitlines()) if status is not None else None
     last_ct = _git(cwd, "log", "-1", "--format=%ct")
     age_h = None
+    last_unix = None
     if last_ct and last_ct.isdigit():
-        age_h = round((time.time() - int(last_ct)) / 3600, 1)
+        last_unix = int(last_ct)
+        age_h = round((time.time() - last_unix) / 3600, 1)
 
     if branch is None and dirty is None:
         return None  # gitはあるが読めない(壊れている等)
-    return {"branch": branch, "dirty": dirty, "last_commit_age_h": age_h}
+    return {"branch": branch, "dirty": dirty, "last_commit_age_h": age_h,
+            "last_commit_unix": last_unix}
 
 
 def collect_git_contexts(cwds: set[str]) -> dict[str, dict | None]:

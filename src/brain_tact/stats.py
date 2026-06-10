@@ -46,6 +46,10 @@ def compute_stats(days: float = 7.0) -> dict:
                 and str(a.get("result", "")).startswith("rejected")]
     verifies = [a for a in acts if a.get("tool") == "verify"]
     outcomes = Counter(v.get("result") for v in verifies)
+    # git裏取り: 「動いた」でなく「実コミットに繋がった」介入の数
+    git_checked = [v for v in verifies if v.get("git_progress") is not None]
+    committed = sum(1 for v in git_checked
+                    if v["git_progress"].get("committed"))
     defers = [a for a in acts if a.get("tool") == "defer"]
 
     pending = load_pending().get("items", [])
@@ -67,6 +71,8 @@ def compute_stats(days: float = 7.0) -> dict:
             "verified": n_verified,
             "outcomes": dict(outcomes),
             "success_rate_pct": success_rate,
+            "git_checked": len(git_checked),
+            "committed": committed,
         },
         "pending": {
             "deferred": len(defers),
@@ -99,6 +105,9 @@ def format_stats(s: dict) -> str:
                      f"成功率 {ef['success_rate_pct']}%")
         for outcome, n in sorted(ef["outcomes"].items()):
             lines.append(f"  {outcome}: {n}")
+        if ef.get("git_checked"):
+            lines.append(f"  git裏取り: {ef['git_checked']}件中 "
+                         f"実コミット {ef['committed']}件")
     else:
         lines.append("\n## 介入効果: 検証データなし")
 
