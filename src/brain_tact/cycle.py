@@ -224,6 +224,14 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         cycle_id = snapshot["cycle_id"]
         slot = time_slot()
 
+        # TUI変更の早期警報: classifyが静かに壊れていないか
+        from .scan import classify_health_alert
+        health_alert = classify_health_alert(snapshot)
+        if health_alert:
+            _log_cycle({"event": "classify_alert", "cycle_id": cycle_id,
+                        "detail": health_alert})
+            record_incident(health_alert)
+
         # 前サイクルの介入が効いたかを検証(actions.logにverifyレコード追記)
         from .verify import verify_interventions
         verify_results = verify_interventions(snapshot)

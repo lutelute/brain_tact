@@ -14,6 +14,31 @@ from .terminal import capture_all_tabs
 TAIL_RUNNING = 10   # 安定稼働中は最小限
 TAIL_ATTENTION = 30  # 要注意(承認待ち・IDLE・エラー等)は文脈込みで
 
+# 分類健全性の警報閾値: claude稼働タブのUNKNOWN率がこれを超えたら
+# Claude CodeのTUI表示変更(classifyのパターン外れ)を疑う
+UNKNOWN_ALERT_RATIO = 0.3
+UNKNOWN_ALERT_MIN = 2
+
+
+def classify_health_alert(snapshot: dict) -> str | None:
+    """claude稼働中なのにUNKNOWNなセッションが急増していたら警報文字列を返す(純関数)。
+
+    classifyはClaude CodeのTUI表示パターン(スピナー・プロンプトbox等)に
+    依存しており、TUIが変わると「静かに壊れて」全部UNKNOWNになる。
+    壊れたら即わかるようにするための早期警報。
+    """
+    sessions = snapshot.get("sessions", [])
+    with_claude = [s for s in sessions if s.get("has_claude")]
+    if not with_claude:
+        return None
+    unknown = [s for s in with_claude if s.get("state_hint") == "UNKNOWN"]
+    if len(unknown) >= UNKNOWN_ALERT_MIN \
+            and len(unknown) / len(with_claude) >= UNKNOWN_ALERT_RATIO:
+        return (f"分類健全性: claude稼働{len(with_claude)}タブ中{len(unknown)}件が"
+                f"UNKNOWN — Claude CodeのTUI変更でclassifyが壊れた可能性。"
+                f"`brain-tact scan --json` で実画面を確認しfixture追加を")
+    return None
+
 
 def _tail(screen: str, n: int) -> list[str]:
     lines = [ln.rstrip() for ln in screen.splitlines()]

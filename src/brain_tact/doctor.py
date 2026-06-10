@@ -108,6 +108,19 @@ def run_doctor() -> list[dict]:
         return SKILL_DST.exists(), str(SKILL_DST)
     checks.append(_check("/brainスキル", skill))
 
+    def classify_health():
+        # TUI変更でclassifyが静かに壊れていないか(最新スナップショットで判定)
+        if not LATEST_JSON.exists():
+            return True, "スナップショット無し(未稼働)"
+        from .scan import classify_health_alert
+        snap = json.loads(LATEST_JSON.read_text())
+        alert = classify_health_alert(snap)
+        if alert:
+            return False, alert
+        n = sum(1 for s in snap.get("sessions", []) if s.get("has_claude"))
+        return True, f"claude稼働{n}タブの分類正常"
+    checks.append(_check("分類健全性", classify_health))
+
     def state_health():
         if not STATE_DIR.is_dir():
             return False, "state/が無い"

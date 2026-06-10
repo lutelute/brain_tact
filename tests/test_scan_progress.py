@@ -46,3 +46,43 @@ def test_missing_jsonl_safe():
             "progress": {"changed": False, "stagnant_cycles": 0}}
     p = compute_progress("same", None, prev)
     assert p == {"changed": False, "stagnant_cycles": 1}
+
+
+class TestClassifyHealthAlert:
+    """TUI変更の早期警報 — claude稼働中なのにUNKNOWN急増を検知する。"""
+
+    def _snap(self, states, has_claude=True):
+        return {"sessions": [
+            {"tty": f"/dev/ttys{i:03d}", "state_hint": st, "has_claude": has_claude}
+            for i, st in enumerate(states)]}
+
+    def test_alert_on_unknown_surge(self):
+        from brain_tact.scan import classify_health_alert
+        snap = self._snap(["UNKNOWN", "UNKNOWN", "RUNNING"])
+        alert = classify_health_alert(snap)
+        assert alert and "TUI変更" in alert
+
+    def test_no_alert_single_unknown(self):
+        """1件だけのUNKNOWNは珍しい画面かもしれない(min=2未満)。"""
+        from brain_tact.scan import classify_health_alert
+        assert classify_health_alert(
+            self._snap(["UNKNOWN", "RUNNING", "IDLE"])) is None
+
+    def test_no_alert_low_ratio(self):
+        from brain_tact.scan import classify_health_alert
+        states = ["UNKNOWN", "UNKNOWN"] + ["RUNNING"] * 8  # 20% < 30%
+        assert classify_health_alert(self._snap(states)) is None
+
+    def test_ignores_non_claude_tabs(self):
+        """claude不在タブ(PLAIN_SHELL等)は分母にも分子にも入れない。"""
+        from brain_tact.scan import classify_health_alert
+        snap = {"sessions": [
+            {"tty": "/dev/ttys001", "state_hint": "UNKNOWN", "has_claude": False},
+            {"tty": "/dev/ttys002", "state_hint": "UNKNOWN", "has_claude": False},
+            {"tty": "/dev/ttys003", "state_hint": "RUNNING", "has_claude": True},
+        ]}
+        assert classify_health_alert(snap) is None
+
+    def test_empty_snapshot(self):
+        from brain_tact.scan import classify_health_alert
+        assert classify_health_alert({"sessions": []}) is None
