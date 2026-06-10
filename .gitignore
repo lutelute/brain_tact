@@ -9,3 +9,11 @@ uv.lock
 .claude/
 アプリロゴとバナー.zip
 assets/logo-gallery.html
+
+# iCloud(~/Documents)同期が生む競合コピー(「name 2.ext」形式)。
+# 過去に mcp-brain-dry 2.json がコミットされ、brain_tact 2.pth が
+# ModuleNotFoundError を起こした(README「既知の罠」参照)
+* 2
+* 2.*
+* 3
+* 3.*
