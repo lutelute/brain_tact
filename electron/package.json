@@ -1,0 +1,27 @@
+{
+  "name": "brain-tact-app",
+  "version": "0.1.0",
+  "description": "brain_tact — a critique-first supervisor for Claude Code sessions",
+  "main": "main.js",
+  "author": "lutelute",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.sgnb.brain-tact",
+    "productName": "brain_tact",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "icon.png"],
+    "mac": {
+      "icon": "icon.png",
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "dir"]
+    }
+  }
+}

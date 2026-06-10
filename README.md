@@ -120,6 +120,20 @@ PYTHONPATH=src $VENV -m brain_tact.cli install --skill          # /brainスキ�
 
 > メニューバーアプリ(`brain-tact-app`, rumps製)もあるが、本命は **ダッシュボード(`serve`)** と **MCP(`brain`)**。Tin/AtelierXからは `GET /api/state` か MCP を叩いて統合する。
 
+## デスクトップアプリ(.app)
+
+`electron/` に Electron シェルアプリ。常駐ダッシュボードを独立ウィンドウ + tray(メニューバー)で表示する(機能は Python core 側、Electron は窓と tray だけ — 引き算)。
+
+```bash
+cd electron
+npm install
+npm start          # 開発起動(ダッシュボードに接続、無ければ Python serve を自動起動)
+npm run build:mac  # dist/ に brain_tact.app / .dmg を生成
+```
+
+- tray アイコン(ロゴ)クリックでウィンドウ表示/非表示トグル
+- ウィンドウを閉じても tray に常駐(終了は tray メニューから)
+
 ## 攻めモード(誰もサボらせない)
 
 usage(Claude利用枠、ccusage計測)が**50%未満**のとき:
