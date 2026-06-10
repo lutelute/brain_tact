@@ -11,7 +11,9 @@ from datetime import datetime
 
 from . import (
     ACTIONS_LOG,
+    CYCLE_LOG,
     HISTORY_DIR,
+    INCIDENTS_LOG,
     LAST_SUCCESS,
     LOCK_FILE,
     PENDING_JSON,
@@ -22,6 +24,7 @@ LOCK_STALE_SEC = 2 * 3600          # これより古いロックは残骸とみ�
 DEBOUNCE_HOURS = 3.0               # スリープ起床時のまとめ発火を1回に正規化
 PENDING_EXPIRE_HOURS = 48.0
 HISTORY_KEEP_DAYS = 14
+LOG_KEEP_DAYS = 90                 # JSONLログ(actions/cycle/incidents)の保持期間
 
 # --- アクション制限(actuatorが強制) ---------------------------------------
 MAX_ACTIONS_PER_CYCLE = 15
@@ -246,4 +249,32 @@ def prune_history() -> int:
         if f.stat().st_mtime < cutoff:
             f.unlink()
             n += 1
+    return n
+
+
+def rotate_logs() -> int:
+    """JSONLログ(actions/cycle/incidents)の90日より古い行を落とす。返り値は削除行数。
+
+    history/には14日pruneがあるのにログは無限成長だった非対称の解消。
+    check_limitsの参照期間は最長48時間なので90日保持で判定に影響しない。
+    tsが読めない行(壊れた行)は監査の欠落を避けるため保守的に残す。
+    """
+    cutoff = time.time() - LOG_KEEP_DAYS * 86400
+    n = 0
+    for log in (ACTIONS_LOG, CYCLE_LOG, INCIDENTS_LOG):
+        if not log.exists():
+            continue
+        lines = log.read_text().splitlines()
+        kept = []
+        for ln in lines:
+            try:
+                ts = datetime.fromisoformat(json.loads(ln)["ts"]).timestamp()
+                if ts < cutoff:
+                    continue
+            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                pass  # ts不明の行は残す
+            kept.append(ln)
+        if len(kept) != len(lines):
+            n += len(lines) - len(kept)
+            log.write_text("\n".join(kept) + ("\n" if kept else ""))
     return n

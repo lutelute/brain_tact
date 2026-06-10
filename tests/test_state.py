@@ -161,3 +161,49 @@ class TestManualBypass:
         assert not ok  # 脳ならクールダウン拒否
         # manual経路は_guarded_sendでcheck_limitsを呼ばない(actuator側の分岐)
         # = 統合はactuatorのmanualフラグで担保(ここではcheck_limitsの脳用挙動のみ確認)
+
+
+class TestRotateLogs:
+    def _patch_logs(self, monkeypatch, tmp_path):
+        paths = {}
+        for name in ("ACTIONS_LOG", "CYCLE_LOG", "INCIDENTS_LOG"):
+            p = tmp_path / f"{name.lower()}.log"
+            monkeypatch.setattr(state, name, p)
+            paths[name] = p
+        return paths
+
+    def _line(self, ago_days: float) -> str:
+        import json
+        ts = (datetime.now().astimezone() - timedelta(days=ago_days)).isoformat(
+            timespec="seconds")
+        return json.dumps({"ts": ts, "tool": "act_send", "result": "sent"})
+
+    def test_drops_old_keeps_recent(self, monkeypatch, tmp_path):
+        logs = self._patch_logs(monkeypatch, tmp_path)
+        logs["ACTIONS_LOG"].write_text(
+            self._line(ago_days=120) + "\n" + self._line(ago_days=1) + "\n")
+        n = state.rotate_logs()
+        assert n == 1
+        remaining = logs["ACTIONS_LOG"].read_text().splitlines()
+        assert len(remaining) == 1
+
+    def test_keeps_unparsable_lines(self, monkeypatch, tmp_path):
+        """tsの読めない行は監査の欠落を避けるため残す。"""
+        logs = self._patch_logs(monkeypatch, tmp_path)
+        logs["CYCLE_LOG"].write_text("not-json\n" + self._line(ago_days=200) + "\n")
+        n = state.rotate_logs()
+        assert n == 1
+        assert logs["CYCLE_LOG"].read_text().splitlines() == ["not-json"]
+
+    def test_noop_when_all_recent(self, monkeypatch, tmp_path):
+        logs = self._patch_logs(monkeypatch, tmp_path)
+        content = self._line(ago_days=2) + "\n"
+        logs["INCIDENTS_LOG"].write_text(content)
+        mtime_before = logs["INCIDENTS_LOG"].stat().st_mtime
+        assert state.rotate_logs() == 0
+        # 変化なしなら書き戻さない(mtime温存)
+        assert logs["INCIDENTS_LOG"].stat().st_mtime == mtime_before
+
+    def test_missing_files_ok(self, monkeypatch, tmp_path):
+        self._patch_logs(monkeypatch, tmp_path)
+        assert state.rotate_logs() == 0

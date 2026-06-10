@@ -31,6 +31,7 @@ from .state import (
     prune_history,
     read_actions,
     release_cycle_lock,
+    rotate_logs,
     should_debounce,
 )
 
@@ -209,6 +210,7 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         # ハウスキーピング
         n_exp = expire_pending()
         n_pru = prune_history()
+        n_rot = rotate_logs()
 
         # スキャン(osascript)はスリープ復帰直後などに失敗しうる。失敗しても
         # サイクルごとクラッシュさせず、incident記録して終了し次回に賭ける。
@@ -278,6 +280,7 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             "num_turns": brain.get("num_turns"),
             "expired_pending": n_exp,
             "pruned_history": n_pru,
+            "rotated_log_lines": n_rot,
             "result_tail": (brain.get("result_text") or "")[-800:],
         })
 

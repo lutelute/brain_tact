@@ -21,7 +21,10 @@ from . import (
 )
 
 PLIST_DST = Path.home() / "Library" / "LaunchAgents" / "com.sgnb.brain-tact.plist"
+DASH_PLIST_DST = (Path.home() / "Library" / "LaunchAgents"
+                  / "com.sgnb.brain-tact-dashboard.plist")
 SKILL_DST = Path.home() / ".claude" / "skills" / "brain" / "SKILL.md"
+DASHBOARD_URL = "http://127.0.0.1:8787/api/state"
 
 
 def _check(name: str, fn) -> dict:
@@ -81,7 +84,25 @@ def run_doctor() -> list[dict]:
                            capture_output=True, text=True, timeout=10)
         return r.returncode == 0, ("登録済み" if r.returncode == 0
                                     else "未ロード(launchctl load)")
-    checks.append(_check("launchd", launchd))
+    checks.append(_check("launchd(巡回)", launchd))
+
+    def dashboard():
+        # ダッシュボード常駐が死んでいてもdoctorが緑のままだった盲点の解消。
+        # 登録チェックだけでなくHTTP死活まで見る(ポート競合等を捕まえる)
+        if not DASH_PLIST_DST.exists():
+            return True, "plist未配置(手動serve運用)"
+        r = subprocess.run(["launchctl", "list", "com.sgnb.brain-tact-dashboard"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return False, "plist配置済みだが未ロード(launchctl load)"
+        import urllib.request
+        try:
+            with urllib.request.urlopen(DASHBOARD_URL, timeout=3) as resp:
+                resp.read(1)
+            return True, "登録済み・HTTP応答あり(:8787)"
+        except OSError:
+            return False, "登録済みだがHTTP応答なし(:8787) — kickstartで再起動を"
+    checks.append(_check("launchd(ダッシュボード)", dashboard))
 
     def skill():
         return SKILL_DST.exists(), str(SKILL_DST)
