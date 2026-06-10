@@ -4,7 +4,8 @@
 せず、批判的に粗・改善余地を見つけて自己改善ループを回し続けさせる。落ちたら復元する。
 
 各セッションを active / needs_user / needs_handover(満杯) / closeable(=完了報告だが
-改善余地あり=改善ループに戻す) / resumable(放置=ループ駆動) に分類する。
+改善余地あり=改善ループに戻す) / resumable(放置・要復元=ループ駆動) /
+ignored(claude未起動=対象外) に分類する。
 ※ closeable は「閉じてOK」ではなく「完了と言っているが改善対象」の意味に転じた。
 
 純関数。CLI・MCP・ダッシュボード・脳プロンプトの全入口から同じ判定を使う。
@@ -25,12 +26,13 @@ QUESTION_RE = re.compile(
     r"お知らせください|ご確認ください|選んでください|どうしますか",
 )
 
-# 掃除カテゴリ
-CLOSEABLE = "closeable"          # 閉じてOK(成果は保全済み or claude不在)
-NEEDS_HANDOVER = "needs_handover"  # 閉じる前に保存/コミットが必要
+# 判定カテゴリ
+CLOSEABLE = "closeable"          # 完了報告で停止(=批判的改善の最優先対象)
+NEEDS_HANDOVER = "needs_handover"  # 満杯/未コミット — 保全してから改善継続
 NEEDS_USER = "needs_user"        # ユーザー判断待ち(承認・質問・上限)
 ACTIVE = "active"                # 稼働中、触らない
-RESUMABLE = "resumable"          # 残作業あり、再開できる
+RESUMABLE = "resumable"          # 放置・claude死亡 — 復元/再開して改善ループへ
+IGNORED = "ignored"              # claude未起動のただのシェル(対象外)
 
 DIRTY_THRESHOLD = 5              # これ以上の未コミット変更は「成果あり」扱い
 STALE_MIN = 30                   # これ以上放置されたIDLEを掃除検討対象に
@@ -63,11 +65,11 @@ def judge_session(rec: dict) -> dict:
 
     # --- claude不在 -------------------------------------------------------
     if state == "DEAD_SHELL":
-        return _j(CLOSEABLE, "claudeが終了している(画面に痕跡のみ)",
-                  "resume で復元し、改善ループに戻す", close_ok=True)
+        return _j(RESUMABLE, "claudeが終了している(画面に痕跡のみ)",
+                  "act_resume で復元し、改善ループに戻す")
     if state == "PLAIN_SHELL":
-        return _j(CLOSEABLE, "claudeを使っていないシェル",
-                  "改善対象外(claude未起動)", close_ok=True)
+        return _j(IGNORED, "claudeを使っていないシェル",
+                  "対象外(claude未起動)")
 
     # --- ユーザー判断が要る状態(掃除より先に判断) ------------------------
     if state in ("AWAITING_APPROVAL", "AWAITING_QUESTION"):
@@ -130,7 +132,7 @@ def _j(category: str, reason: str, action: str,
         "category": category,
         "reason": reason,
         "action": action,
-        "close_ok": close_ok,        # ダッシュボードの「閉じてOK」列に出す
+        "close_ok": close_ok,        # ダッシュボード「🔬要改善」列に出す(完了報告のみ)
         "needs_handover": handover,   # 引き継ぎ保存を促す対象
     }
 

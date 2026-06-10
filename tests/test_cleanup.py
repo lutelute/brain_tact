@@ -3,6 +3,7 @@
 from brain_tact.cleanup import (
     ACTIVE,
     CLOSEABLE,
+    IGNORED,
     NEEDS_HANDOVER,
     NEEDS_USER,
     RESUMABLE,
@@ -29,13 +30,21 @@ def rec(state="IDLE", age=None, dirty=None, last=None,
     }
 
 
+class TestNoClaude:
+    def test_dead_shell_is_resumable(self):
+        """claude死亡は「閉じてOK」ではなく復元対象(改善ループに戻す)。"""
+        j = judge_session(rec(state="DEAD_SHELL"))
+        assert j["category"] == RESUMABLE
+        assert j["close_ok"] is False
+
+    def test_plain_shell_is_ignored(self):
+        """claude未起動のただのシェルは改善対象外(要改善列に出さない)。"""
+        j = judge_session(rec(state="PLAIN_SHELL"))
+        assert j["category"] == IGNORED
+        assert j["close_ok"] is False
+
+
 class TestCloseable:
-    def test_dead_shell(self):
-        assert judge_session(rec(state="DEAD_SHELL"))["category"] == CLOSEABLE
-
-    def test_plain_shell(self):
-        assert judge_session(rec(state="PLAIN_SHELL"))["category"] == CLOSEABLE
-
     def test_done_no_dirty(self):
         j = judge_session(rec("IDLE", age=40, dirty=0,
                               last="引き継ぎ完了です。本日の開発を終了します。"))
@@ -112,9 +121,10 @@ class TestSummarize:
             rec(state="RUNNING"),
         ]}
         s = summarize(snap)
-        assert len(s["closeable"]) == 2  # dead + done
+        assert len(s["closeable"]) == 1  # done(完了報告)のみ — deadは復元対象
         assert len(s["needs_handover"]) == 1  # context_full
         assert s["counts"][ACTIVE] == 1
+        assert s["counts"][RESUMABLE] == 1  # dead shell
         assert "要改善" in s["headline"]
         # 各セッションにcleanup判定が付与されている
         assert all("cleanup" in x for x in s["sessions"])
