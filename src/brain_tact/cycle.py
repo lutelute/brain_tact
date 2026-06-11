@@ -185,6 +185,11 @@ def recent_incidents(hours: float = 24.0) -> list[dict]:
     return out
 
 
+def _is_weekly(now: datetime) -> bool:
+    """日曜夜の巡回か(週次サマリーをレポートに含めるか — Lv55)。"""
+    return time_slot(now) == "night" and now.weekday() == 6
+
+
 def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet") -> int:
     ensure_dirs()
     started = datetime.now()
@@ -250,6 +255,13 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
                 print(f"📖 読書係: {review_note['project']} を読み直しました",
                       file=sys.stderr)
 
+        # 週次サマリー(Lv55): 日曜夜は1週間のKPIをレポートに統合(push数は不変)
+        weekly = None
+        if _is_weekly(datetime.now()):
+            from .stats import compute_stats, weekly_summary
+            weekly = weekly_summary(compute_stats(days=7.0))
+            print("📈 週次サマリーをレポートに含めます", file=sys.stderr)
+
         pending = [i for i in load_pending().get("items", []) if i["status"] == "open"]
         recent = [
             {k: r.get(k) for k in ("ts", "cycle_id", "tool", "tty", "reason",
@@ -259,7 +271,7 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         incidents = recent_incidents(hours=24)
         prompt = build_brain_prompt(snapshot, pending, recent, slot,
                                     dry_run=dry_run, review=review_note,
-                                    incidents=incidents)
+                                    incidents=incidents, weekly=weekly)
 
         print(f"🧠 {slot} 巡回開始 cycle={cycle_id} タブ{snapshot['totals']['tabs']} "
               f"(dry_run={dry_run}, model={model})", file=sys.stderr)

@@ -75,3 +75,11 @@ class TestRunBrainWithRetry:
         brain = cycle._run_brain_with_retry("p", "c1", "sonnet", True)
         assert brain["result_text"] == "巡回完了"
         assert len(calls) == 2
+
+
+class TestWeeklySlot:
+    def test_sunday_night_is_weekly(self):
+        from datetime import datetime
+        assert cycle._is_weekly(datetime(2026, 6, 14, 22, 5))   # 日曜22時
+        assert not cycle._is_weekly(datetime(2026, 6, 15, 22, 5))  # 月曜22時
+        assert not cycle._is_weekly(datetime(2026, 6, 14, 12, 0))  # 日曜昼

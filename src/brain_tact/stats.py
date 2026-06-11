@@ -102,6 +102,28 @@ def compute_stats(days: float = 7.0) -> dict:
     }
 
 
+def weekly_summary(s: dict) -> str:
+    """週次サマリー(Lv55) — 日曜夜のLINEレポートに含める3行要約。
+
+    push数は増やさない(夜の定時1通に統合)。計算済みのcompute_stats結果を渡す。
+    """
+    iv = s["interventions"]
+    ef = s["effectiveness"]
+    pd = s["pending"]
+    lines = [f"巡回{len(s['cycles'])}回 / 介入{iv['sent']}件"
+             f"(ガードレール拒否{iv['rejected_by_guardrails']})"]
+    if ef["verified"]:
+        line = f"介入効果: 成功率{ef['success_rate_pct']}%"
+        if ef.get("quality_score_pct") is not None:
+            line += (f" / 品質スコア{ef['quality_score_pct']}%"
+                     f"(実コミット{ef['quality']['produced']})")
+        lines.append(line)
+    st = pd["status"]
+    lines.append(f"保留: 新規{pd['deferred']} / 解決{st.get('resolved', 0)}"
+                 f" / open{st.get('open', 0)}")
+    return "\n".join(lines)
+
+
 def format_stats(s: dict) -> str:
     lines = [f"📊 brain-tact stats(直近{s['window_days']:.0f}日)"]
 

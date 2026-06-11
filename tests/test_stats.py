@@ -56,3 +56,19 @@ class TestQualityScore:
         out = stats.format_stats(stats.compute_stats(days=1))
         assert "品質スコア 100%" in out
         assert "abc feat: x" in out
+
+
+class TestWeeklySummary:
+    def test_three_lines(self, monkeypatch):
+        recs = [
+            {"tool": "act_send", "result": "sent"},
+            {"tool": "verify", "result": "reactivated",
+             "git_progress": {"committed": True}},
+            {"tool": "defer"},
+        ]
+        monkeypatch.setattr(stats, "read_actions", lambda hours: recs)
+        out = stats.weekly_summary(stats.compute_stats(days=7))
+        assert "介入1件" in out
+        assert "品質スコア100%" in out and "実コミット1" in out
+        assert "保留: 新規1" in out
+        assert len(out.splitlines()) <= 3
