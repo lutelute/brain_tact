@@ -62,11 +62,21 @@ def build_brain_prompt(
     dry_run: bool = False,
     review: dict | None = None,
     incidents: list[dict] | None = None,
+    weekly: str | None = None,
 ) -> str:
     s = SLOTS[slot]
     now = datetime.now()
     review_json = (json.dumps(review, ensure_ascii=False, indent=1)
                    if review else "(今回の読書係レポートはなし)")
+    weekly_block = ""
+    if weekly:
+        weekly_block = f"""
+## データ5: 週次KPI(日曜夜のみ — この1週間のまとめ)
+```
+{weekly}
+```
+今夜のLINEレポートの末尾に「📈 今週:」としてこの要約を2〜3行で含めること(送信は通常通り1回のみ)。
+"""
     # 障害はLINEに都度流さず、定時レポートで件数だけ要約(ユーザー指示: 定時4通のみ)
     incident_line = (f" / ⚠️ 前回以降の障害{len(incidents)}件"
                      if incidents else "")
@@ -107,8 +117,8 @@ def build_brain_prompt(
    - 承認してよい(act_approve): ファイル読み取り / プロジェクト内のファイル編集・作成 / ビルド・テスト・lint / git add・commit(プロジェクト内) / パッケージインストール(npm・pip・uv等)
    - 必ずdefer: rm -rf や大量削除 / git push(特に--force) / sudo / プロジェクト外への書き込み / デプロイ・外部送信・課金が絡むもの / 秘密情報を扱うもの / 設計判断そのもの
    - 「don't ask again」系の選択肢があっても常に単発承認("1")を選ぶ
-4. IDLE(放置)への標準メッセージ例: 「定時巡回です。現在の進捗を3行で要約し、残作業が明確なら続行してください。判断が必要な点があれば箇条書きで止めておいてください」
-5. データ2の tool="verify" は過去の介入の効果検証結果(reactivated=効いた / no_change=不発 / worse=悪化)。同じttyへの介入で no_change が2件以上あれば、もう突かず defer する(3ストライク)。不発だった介入と同じ文面を繰り返さない。verify の git_progress.committed=true は介入が実コミットに繋がった(価値を生んだ)証拠で、git_progress.commits にそのコミットメッセージが入る(改善の中身の判断材料 — 微修正の繰り返しなら方向転換を促す)。逆に reactivated でも committed=false が続くセッションは改善ループが空回りしている疑い — 同じ指示を繰り返さず、方向を変える(検証・テスト・コミットを促す)か defer する
+4. IDLE(放置)への標準メッセージ例: 「定時巡回です。現在の進捗を3行で要約し、残作業が明確なら続行してください。作業の区切りではテスト・lint・実行確認を通し、論理単位でコミットして締めてください。判断が必要な点があれば箇条書きで止めておいてください」— 改善指示には常に**検証可能な締め**(テスト/実行確認/コミット)を含めること。「がんばって」ではなく品質ゲートを通させる
+5. データ2の tool="verify" は過去の介入の効果検証結果(reactivated=効いた / no_change=不発 / worse=悪化)。同じttyへの介入で no_change が2件以上あれば、もう突かず defer する(3ストライク)。不発だった介入と同じ文面を繰り返さない。verify の git_progress.committed=true は介入が実コミットに繋がった(価値を生んだ)証拠で、git_progress.commits にそのコミットメッセージが入る(改善の中身の判断材料 — 微修正の繰り返しなら方向転換を促す)。逆に reactivated でも committed=false が続くセッションは改善ループが空回りしている疑い — 同じ指示を繰り返さず、方向転換テンプレートを使う: 「改善が形になっていないようです。手元の変更をいま動かして検証し、価値があるものだけ論理単位でコミットして締めてください。価値が無ければ破棄し、別角度の改善(テスト追加・ドキュメント・依存整理)に切り替えてください」。それでも不発なら defer する
 6. ERROR_RETRYING は自動回復を待つ(報告のみ)。LIMIT_REACHED は介入せず defer(kind=limit)
 7. DEAD_SHELL は act_resume で復元する(クールダウン拒否されたら defer kind=dead)
 8. state_hint はPythonの機械推定にすぎない。screen_tail の生テキストと矛盾したら生テキストを信じる
@@ -142,7 +152,7 @@ def build_brain_prompt(
 
 ## 攻めモード(usage余力の活用 — 誰もサボらせない)
 データ3の totals.usage.pct はClaude利用枠の消費率(現5時間ブロック、過去最大比)。**50未満なら余力がある**:
-- IDLE(放置)で残作業が無い・完了済みのセッションには、通常の標準メッセージの代わりに「進捗を3行で要約。残作業があれば続行。残作業が無ければ、このプロジェクトの改善候補を3つ提案し、最も価値が高いものに自分で着手して」を送る(行動規範2のage保護・クールダウンは通常通り適用)
+- IDLE(放置)で残作業が無い・完了済みのセッションには、通常の標準メッセージの代わりに「進捗を3行で要約。残作業があれば続行。残作業が無ければ、このプロジェクトの改善候補を3つ提案し、最も価値が高いものに自分で着手して。改善は検証可能に(テスト・実行確認を通し、論理単位でコミットして締める)」を送る(行動規範2のage保護・クールダウンは通常通り適用)
 - signals.context_full=true のセッションには新しい仕事を振らない(行動規範16の標準手順=コミット→/引き継ぎ→/clear→続行のみ)
 - データ4に読書係のプロジェクト報告があれば、要点(プロジェクト名+上位提案1〜2)をLINEレポートの「💡提案」に含めてホウレンソウする
 usage.pct >= 50 または不明(null)のときは守りの運用(従来通り)。無理に仕事を作らない。
@@ -170,4 +180,4 @@ usage.pct >= 50 または不明(null)のときは守りの運用(従来通り)�
 ```json
 {review_json}
 ```
-"""
+{weekly_block}"""
