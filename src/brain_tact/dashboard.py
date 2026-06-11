@@ -50,6 +50,7 @@ def _build_state() -> dict:
     snap = json.loads(LATEST_JSON.read_text())
     cl = summarize(snap)
     pending = [i for i in load_pending().get("items", []) if i["status"] == "open"]
+    from .cycle import recent_incidents
     return {
         "taken_at": snap.get("taken_at"),
         "totals": snap.get("totals"),
@@ -58,6 +59,7 @@ def _build_state() -> dict:
         "needs_handover": cl["needs_handover"],
         "sessions": cl["sessions"],
         "pending": pending,
+        "incidents": recent_incidents(hours=24)[-5:],
     }
 
 
@@ -215,8 +217,10 @@ function render(d){
   STATE=d;
   document.getElementById('headline').textContent=d.headline||'';
   document.getElementById('meta').textContent=
+    ((d.incidents||[]).length?'⚠️障害'+d.incidents.length+'  ':'')+
     (d.taken_at||'').replace('T',' ').slice(0,16)+
     (d.totals&&d.totals.usage&&d.totals.usage.pct!=null?'  枠'+d.totals.usage.pct.toFixed(0)+'%':'');
+  document.getElementById('meta').title=(d.incidents||[]).map(i=>i.ts+' '+i.error).join('\\n');
 
   const sByTty=Object.fromEntries(d.sessions.map(s=>[s.tty,s]));
   const cl=document.getElementById('closeable');
@@ -396,7 +400,9 @@ function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 function toast(m){const t=document.getElementById('toast');t.textContent=m;
   t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500)}
 function render(d){
-  document.getElementById('hl').textContent=d.headline||'';
+  const inc=(d.incidents||[]).length;
+  document.getElementById('hl').textContent=(inc?`⚠️${inc} `:'')+(d.headline||'');
+  document.getElementById('hl').title=(d.incidents||[]).map(i=>i.ts+' '+i.error).join('\\n');
   document.getElementById('t').textContent=(d.taken_at||'').slice(11,16);
   const ss=(d.sessions||[]).slice().sort((a,b)=>
     (ORDER[a.cleanup.category]??9)-(ORDER[b.cleanup.category]??9));

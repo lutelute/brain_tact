@@ -155,6 +155,19 @@ def _run_brain_with_retry(prompt: str, cycle_id: str, model: str,
     return None
 
 
+def recent_cycle_events(n: int = 20) -> list[dict]:
+    """cycle.logの直近nイベント(異常検知・doctorの材料)。"""
+    if not CYCLE_LOG.exists():
+        return []
+    out = []
+    for line in CYCLE_LOG.read_text().splitlines()[-n:]:
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
 def record_incident(error: str) -> None:
     """サイクル失敗を障害ログに記録する(LINEには流さない)。
 
@@ -237,6 +250,16 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
             _log_cycle({"event": "classify_alert", "cycle_id": cycle_id,
                         "detail": health_alert})
             record_incident(health_alert)
+
+        # 異常検知(Lv80): 全停止・連続失敗・異常コスト → incident+macOS通知
+        # (臨時LINEは定時4通方針と衝突するため使わない)
+        from .anomaly import detect_anomalies, notify_mac
+        anomalies = detect_anomalies(snapshot, recent_cycle_events())
+        for a in anomalies:
+            _log_cycle({"event": "anomaly", "cycle_id": cycle_id, "detail": a})
+            record_incident(f"異常検知: {a}")
+        if anomalies and not dry_run:
+            notify_mac("🧠 brain_tact 異常検知", " / ".join(anomalies))
 
         # 前サイクルの介入が効いたかを検証(actions.logにverifyレコード追記)
         from .verify import verify_interventions
