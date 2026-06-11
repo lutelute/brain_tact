@@ -34,10 +34,24 @@ brain_tact(定時巡回脳)が積んだ保留項目をユーザーと対話で�
 
 以下の順でユーザーに提示する:
 
-1. **open保留項目**(`status == "open"`)を番号付きで:
-   - `summary`、`project`、`kind`、`screen_excerpt`(あれば抜粋)、`suggested_actions`
-2. **全セッション表**: tty / project / state_hint / jsonl_age_min / 直近アクション
+1. **open保留項目**(`status == "open"`)を**優先度順**の番号付きで。優先度は
+   kind で並べる: `approval`(承認待ち=即断可能) → `dead`(復元) → `limit` →
+   `stalled` → `question` → `other`。同kind内は `created_at` が古い順
+   - 各項目: `summary`、`project`、`kind`、経過時間、`screen_excerpt`(あれば抜粋)、`suggested_actions`
+2. **全セッション表**: tty / project / cleanup.category / state_hint / jsonl_age_min / 直近アクション
 3. 保留ゼロなら「保留なし」+ セッション表だけ提示
+
+### Step 2.5: 横断照会・一括指示(ユーザーの聞き方に応じて)
+
+- **「<プロジェクト>の状況は?」**(例:「marginaliaどうなってる」): `latest.json` の
+  `sessions[]` から `project` 部分一致で探し、state_hint / cleanup / git(dirty・最終コミット) /
+  last_assistant / screen_tail 要約を1枚で提示。`actions.log` から該当ttyへの直近介入と
+  verify結果(git_progress含む)も添える
+- **「全部に〜して」「IDLEのやつ全部に指示」**(一括指示): 対象セッションを列挙して
+  ユーザーに確認 → 承認後、各ttyに `brain-tact send` を順に実行(RUNNINGは除外。
+  手動操作なのでクールダウンなし)。実行結果を表で報告
+- **「品質どう?」「効果出てる?」**: `brain-tact stats --days 7` を実行し、
+  品質スコア(実コミット/動いただけ/不発)と代表コミットを提示
 
 ### Step 3: 指示実行
 
