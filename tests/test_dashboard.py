@@ -78,3 +78,21 @@ class TestTokenEmbedding:
         dashboard._get_token()
         mode = dashboard.TOKEN_FILE.stat().st_mode & 0o777
         assert mode == 0o600
+
+
+class TestMiniPage:
+    def test_mini_embeds_token(self, server):
+        token = dashboard._get_token()
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{server}/mini", timeout=10) as r:
+            html = r.read().decode()
+        assert f"const TOKEN='{token}'" in html
+        assert "__BRAIN_TOKEN__" not in html
+        assert "/events" in html  # SSE購読(リアルタイム)
+        assert "↻ UI" in html      # UI再読み込み(SSE再接続)
+
+    def test_full_page_has_rescan(self, server):
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{server}/", timeout=10) as r:
+            html = r.read().decode()
+        assert 'id="rescan"' in html  # フル版にも再スキャンボタン

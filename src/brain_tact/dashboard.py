@@ -122,6 +122,7 @@ button:disabled{opacity:.5;cursor:default}
   <h1><img src="/favicon.png" width="22" style="vertical-align:-4px;border-radius:5px"> brain_tact</h1>
   <span class="headline" id="headline">読み込み中…</span>
   <span class="meta" id="meta"></span>
+  <button class="btn ghost" id="rescan" title="今すぐ再スキャン">⟳ スキャン</button>
 </header>
 <div class="wrap">
   <div class="cols">
@@ -240,12 +241,113 @@ document.addEventListener('click',e=>{
     act({...sa.args,tool:sa.tool,reason:'dashboard:'+(sa.label||sa.tool),_resolve:p.id});
   }
 });
+// 再スキャン(POST /api/scan → latest.json更新 → SSEが自動で再描画)
+document.getElementById('rescan').onclick=async()=>{
+  toast('スキャン中…');
+  try{
+    await fetch('/api/scan',{method:'POST',
+      headers:{'X-Brain-Token':TOKEN},body:'{}'});
+    toast('スキャン完了');
+  }catch(_){toast('スキャン失敗')}
+};
 // act 後の即時反映用(pending解決などは latest.json mtime を変えないため)
 async function refresh(){try{render(await (await fetch('/api/state')).json())}catch(_){}}
 // ポーリング廃止 → SSE。接続時に現在状態が即届き、以降は変化時のみ push される
 const _es=new EventSource('/events');
 _es.onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}};
 _es.onerror=()=>{};  // EventSource は自動再接続する
+</script>
+</body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# ミニ監視窓(/mini) — 常時視界に置ける簡易窓。Electronが最前面小窓で表示する
+# ---------------------------------------------------------------------------
+
+MINI_PAGE = """<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>brain_tact mini</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;font:12px/1.45 -apple-system,system-ui,sans-serif;
+  background:#14161a;color:#e6e8eb;overflow:hidden;height:100vh;
+  display:flex;flex-direction:column}
+header{padding:7px 10px;background:#1b1e24;border-bottom:1px solid #2a2e36;
+  display:flex;align-items:center;gap:8px;-webkit-app-region:drag;
+  user-select:none;flex-shrink:0}
+.hl{font-weight:600;color:#9fe6c4;font-size:11px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;flex:1}
+.t{color:#7b8290;font-size:10px}
+.x{-webkit-app-region:no-drag;cursor:pointer;color:#7b8290;border:0;
+  background:none;font-size:13px;padding:0 2px}
+.x:hover{color:#e6e8eb}
+.list{overflow-y:auto;flex:1;padding:5px}
+.row{display:flex;gap:7px;padding:4px 7px;border-radius:6px;margin-bottom:3px;
+  background:#1b1e24;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.d-needs_user{background:#f0a0a0}
+.d-needs_handover{background:#f0d98a}
+.d-closeable{background:#9fe6c4}
+.d-resumable{background:#c4b0e6}
+.d-active{background:#8fb8e6}
+.d-ignored{background:#4a4f58}
+.proj{font-weight:600;white-space:nowrap;max-width:42%;overflow:hidden;
+  text-overflow:ellipsis;flex-shrink:0}
+.why{color:#8b919c;font-size:11px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;flex:1}
+.empty{color:#6b7280;font-style:italic;padding:8px}
+footer{padding:6px 10px;background:#1b1e24;border-top:1px solid #2a2e36;
+  display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:11px}
+.pend{color:#f0a0a0;font-weight:600}
+.spacer{flex:1}
+.btn{background:#343a44;color:#e6e8eb;border:0;border-radius:5px;
+  padding:3px 8px;font-size:11px;cursor:pointer}
+.btn:hover{background:#3f4651}
+a{color:#8fb8e6;text-decoration:none;font-size:11px}
+</style></head>
+<body>
+<header>
+  <span class="hl" id="hl">接続中…</span>
+  <span class="t" id="t"></span>
+  <button class="x" onclick="window.close()" title="隠す">✕</button>
+</header>
+<div class="list" id="list"></div>
+<footer>
+  <span class="pend" id="pend"></span>
+  <span class="spacer"></span>
+  <button class="btn" id="rescan" title="今すぐ再スキャン(データ更新)">⟳</button>
+  <button class="btn" id="reload" title="UIを再読み込み(SSE再接続・表示回復)">↻ UI</button>
+  <a href="/" target="_blank" title="フルダッシュボード">⤢ フル</a>
+</footer>
+<script>
+const TOKEN='__BRAIN_TOKEN__';
+const ORDER={needs_user:0,needs_handover:1,closeable:2,resumable:3,active:4,ignored:5};
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function render(d){
+  document.getElementById('hl').textContent=d.headline||'';
+  document.getElementById('t').textContent=(d.taken_at||'').slice(11,16);
+  const ss=(d.sessions||[]).slice().sort((a,b)=>
+    (ORDER[a.cleanup.category]??9)-(ORDER[b.cleanup.category]??9));
+  document.getElementById('list').innerHTML=ss.map(s=>
+    `<div class="row" title="${esc(s.tty+' '+s.state_hint+' — '+s.cleanup.reason)}">
+     <span class="dot d-${s.cleanup.category}"></span>
+     <span class="proj">${esc(s.project||'-')}</span>
+     <span class="why">${esc(s.cleanup.reason)}</span></div>`).join('')
+    ||'<div class="empty">セッションなし</div>';
+  const n=(d.pending||[]).length;
+  document.getElementById('pend').textContent=n?`⏸ 保留${n}`:'';
+}
+new EventSource('/events').onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}};
+function rescan(){fetch('/api/scan',{method:'POST',
+  headers:{'X-Brain-Token':TOKEN},body:'{}'}).catch(()=>{})}
+document.getElementById('rescan').onclick=rescan;
+document.getElementById('reload').onclick=()=>location.reload();
+// 表示中のみ90秒ごとに自動再スキャン(巡回4回/日の隙間を「いま」で埋める)
+setInterval(()=>{if(!document.hidden)rescan()},90000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)rescan()});
+rescan();  // 開いた時・↻UI直後も最新に
 </script>
 </body></html>"""
 
@@ -273,6 +375,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/" or self.path.startswith("/index"):
             self._send(200, PAGE.replace("__BRAIN_TOKEN__", _get_token()),
+                       "text/html")
+        elif self.path.startswith("/mini"):
+            self._send(200, MINI_PAGE.replace("__BRAIN_TOKEN__", _get_token()),
                        "text/html")
         elif self.path.startswith("/api/state"):
             self._send(200, json.dumps(_build_state(), ensure_ascii=False))
