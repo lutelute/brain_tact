@@ -7,6 +7,7 @@
 
 from datetime import datetime
 
+from .gitinfo import commits_since
 from .state import log_action, read_actions
 
 VERIFY_WINDOW_HOURS = 26.0   # これより古い介入は検証しない(1日+余裕)
@@ -98,6 +99,15 @@ def verify_interventions(snapshot: dict) -> list[dict]:
         }
         git_progress = _git_progress(action, sess)
         if git_progress is not None:
+            # 質的評価(Lv40): 実コミットが生まれていたら中身(メッセージ)も採取。
+            # 脳が次巡回で「改善の中身」を読み、statsが品質を集計できる
+            if git_progress.get("committed") and action.get("cwd"):
+                commits = commits_since(
+                    action["cwd"],
+                    (action.get("git_before") or {}).get("last_commit_unix") or 0,
+                )
+                if commits:
+                    git_progress["commits"] = commits
             rec["git_progress"] = git_progress
         log_action(rec)
         results.append(rec)

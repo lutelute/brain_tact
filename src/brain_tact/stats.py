@@ -50,6 +50,24 @@ def compute_stats(days: float = 7.0) -> dict:
     git_checked = [v for v in verifies if v.get("git_progress") is not None]
     committed = sum(1 for v in git_checked
                     if v["git_progress"].get("committed"))
+
+    # 介入品質スコア(Lv40): 実コミットを生んだ=1.0 / 動いただけ=0.5 / 不発・悪化=0。
+    # unknown(タブ消失等)は判定不能としてスコアの分母に入れない
+    quality = {"produced": 0, "moved": 0, "silent": 0}
+    sample_commits: list[str] = []
+    for v in verifies:
+        gp = v.get("git_progress") or {}
+        if gp.get("committed"):
+            quality["produced"] += 1
+            sample_commits.extend(gp.get("commits") or [])
+        elif v.get("result") == "reactivated":
+            quality["moved"] += 1
+        elif v.get("result") in ("no_change", "worse"):
+            quality["silent"] += 1
+    n_scored = sum(quality.values())
+    quality_score = (round((quality["produced"] + quality["moved"] * 0.5)
+                           / n_scored * 100) if n_scored else None)
+
     defers = [a for a in acts if a.get("tool") == "defer"]
 
     pending = load_pending().get("items", [])
@@ -73,6 +91,9 @@ def compute_stats(days: float = 7.0) -> dict:
             "success_rate_pct": success_rate,
             "git_checked": len(git_checked),
             "committed": committed,
+            "quality": quality,
+            "quality_score_pct": quality_score,
+            "sample_commits": sample_commits[:5],
         },
         "pending": {
             "deferred": len(defers),
@@ -105,9 +126,13 @@ def format_stats(s: dict) -> str:
                      f"成功率 {ef['success_rate_pct']}%")
         for outcome, n in sorted(ef["outcomes"].items()):
             lines.append(f"  {outcome}: {n}")
-        if ef.get("git_checked"):
-            lines.append(f"  git裏取り: {ef['git_checked']}件中 "
-                         f"実コミット {ef['committed']}件")
+        if ef.get("quality_score_pct") is not None:
+            q = ef["quality"]
+            lines.append(f"  品質スコア {ef['quality_score_pct']}% — "
+                         f"実コミット{q['produced']} / 動いただけ{q['moved']} / "
+                         f"不発{q['silent']} (git裏取り {ef['git_checked']}件)")
+        for c in ef.get("sample_commits", [])[:3]:
+            lines.append(f"    ↳ {c}")
     else:
         lines.append("\n## 介入効果: 検証データなし")
 

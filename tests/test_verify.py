@@ -139,3 +139,36 @@ class TestGitProgress:
         rs = [{"result": "reactivated", "git_progress": {"committed": True}},
               {"result": "reactivated"}]
         assert "実コミット1" in summarize_outcomes(rs)
+
+
+class TestCommitsAttachment:
+    """Lv40: committed=true のverifyレコードにコミットメッセージが添付される。"""
+
+    def _log_sent_with_git(self):
+        state.log_action({
+            "ts": _ts(60), "cycle_id": "c1", "tool": "act_send",
+            "tty": "/dev/ttys001", "result": "sent", "cwd": "/repo",
+            "git_before": {"dirty": 5, "last_commit_unix": 1000}})
+
+    def _snap(self, unix=2000):
+        s = session("RUNNING")
+        s["cwd"] = "/repo"
+        s["git"] = {"dirty": 0, "last_commit_unix": unix}
+        return {"cycle_id": "c2", "sessions": [s]}
+
+    def test_commits_attached_when_committed(self, monkeypatch):
+        monkeypatch.setattr(verify, "commits_since",
+                            lambda cwd, ts: ["abc1234 fix: 改善した"])
+        self._log_sent_with_git()
+        r = verify_interventions(self._snap())
+        assert r[0]["git_progress"]["commits"] == ["abc1234 fix: 改善した"]
+
+    def test_no_commits_lookup_when_not_committed(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(verify, "commits_since",
+                            lambda cwd, ts: called.append(1))
+        self._log_sent_with_git()
+        r = verify_interventions(self._snap(unix=1000))  # コミット増なし
+        assert r[0]["git_progress"]["committed"] is False
+        assert "commits" not in r[0]["git_progress"]
+        assert not called
