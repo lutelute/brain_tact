@@ -34,6 +34,60 @@ COOLDOWN_HOURS = {"act_send": 6.0, "act_resume": 12.0}
 STRIKE_OUT = 2                 # 連続不発(no_change)がこの回数でact_send禁止
 STRIKE_WINDOW_HOURS = 48.0     # 3ストライク判定に使うverify参照期間
 
+# --- チューニング上書き(Lv75) ----------------------------------------------
+# brain-tact tune --apply が state/tuning.json に書き、ここで読み込んで
+# 上記のデフォルトを上書きする。自動「適用」はしない(提案→人間が--apply)。
+
+TUNING_JSON = None  # 遅延初期化(__init__のSTATE_DIRに依存)
+
+
+def _tuning_path():
+    from . import STATE_DIR
+    return STATE_DIR / "tuning.json"
+
+
+def load_tuning() -> dict:
+    p = _tuning_path()
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+
+def apply_tuning() -> list[str]:
+    """tuning.jsonの値でモジュールの制限値を上書きする(起動時に1回)。
+
+    Returns: 適用した項目の説明リスト(doctorやtuneコマンドの表示用)。
+    """
+    t = load_tuning()
+    applied = []
+    g = globals()
+    if isinstance(t.get("cooldown_hours"), dict):
+        for k, v in t["cooldown_hours"].items():
+            if k in COOLDOWN_HOURS and isinstance(v, (int, float)) \
+                    and 1.0 <= v <= 48.0:
+                COOLDOWN_HOURS[k] = float(v)
+                applied.append(f"cooldown {k}={v}h")
+    if isinstance(t.get("strike_out"), int) and 1 <= t["strike_out"] <= 5:
+        g["STRIKE_OUT"] = t["strike_out"]
+        applied.append(f"strike_out={t['strike_out']}")
+    if isinstance(t.get("max_actions_per_cycle"), int) \
+            and 3 <= t["max_actions_per_cycle"] <= 30:
+        g["MAX_ACTIONS_PER_CYCLE"] = t["max_actions_per_cycle"]
+        applied.append(f"max_actions={t['max_actions_per_cycle']}")
+    return applied
+
+
+def save_tuning(tuning: dict) -> None:
+    ensure_dirs()
+    _tuning_path().write_text(json.dumps(tuning, ensure_ascii=False, indent=1))
+
+
+# モジュールロード時に適用(actuator/cycleどの入口でも同じ制限になる)
+apply_tuning()
+
 
 def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")

@@ -133,6 +133,21 @@ def cmd_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tune(args: argparse.Namespace) -> int:
+    from .tune import apply_proposals, format_proposals, propose
+    p = propose(days=args.days)
+    if args.json:
+        print(json.dumps(p, ensure_ascii=False, indent=1))
+    else:
+        print(format_proposals(p))
+    if args.apply and p.get("proposals"):
+        tuning = apply_proposals(p)
+        print(f"✅ tuning.json に適用しました: {json.dumps(tuning, ensure_ascii=False)}")
+    elif args.apply:
+        print("(適用する提案がありません)")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .doctor import format_doctor, run_doctor
     checks = run_doctor()
@@ -208,6 +223,12 @@ def main(argv: list[str] | None = None) -> int:
 
     dp = sub.add_parser("doctor", help="環境・依存・権限の自己診断")
     dp.set_defaults(func=cmd_doctor)
+
+    tn = sub.add_parser("tune", help="KPIに基づくパラメータ調整の提案(--applyで適用)")
+    tn.add_argument("--days", type=float, default=14.0)
+    tn.add_argument("--apply", action="store_true", help="提案をtuning.jsonに保存")
+    tn.add_argument("--json", action="store_true")
+    tn.set_defaults(func=cmd_tune)
 
     tp = sub.add_parser("stats", help="KPI集計(介入成功率・稼働率推移)")
     tp.add_argument("--days", type=float, default=7.0)
