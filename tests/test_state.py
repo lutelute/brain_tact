@@ -207,3 +207,28 @@ class TestRotateLogs:
     def test_missing_files_ok(self, monkeypatch, tmp_path):
         self._patch_logs(monkeypatch, tmp_path)
         assert state.rotate_logs() == 0
+
+
+class TestInsights:
+    def _patch(self, monkeypatch, tmp_path):
+        p = tmp_path / "insights.jsonl"
+        monkeypatch.setattr(state, "INSIGHTS_LOG", p)
+        return p
+
+    def test_log_and_read_latest_first(self, monkeypatch, tmp_path):
+        self._patch(monkeypatch, tmp_path)
+        for i in range(5):
+            state.log_insight(f"学び{i}", f"c{i}")
+        out = state.read_insights(limit=3)
+        assert [r["text"] for r in out] == ["学び4", "学び3", "学び2"]
+
+    def test_one_per_cycle_guard(self, monkeypatch, tmp_path):
+        self._patch(monkeypatch, tmp_path)
+        state.log_insight("x", "c1")
+        assert state.has_insight_for_cycle("c1")
+        assert not state.has_insight_for_cycle("c2")
+
+    def test_empty(self, monkeypatch, tmp_path):
+        self._patch(monkeypatch, tmp_path)
+        assert state.read_insights() == []
+        assert not state.has_insight_for_cycle("c1")

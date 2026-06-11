@@ -21,7 +21,14 @@ from fastmcp import FastMCP
 
 from . import CLAUDE_RESUME_CMD, LATEST_JSON
 from .procs import find_claude_processes
-from .state import add_pending, check_limits, log_action, load_pending
+from .state import (
+    add_pending,
+    check_limits,
+    has_insight_for_cycle,
+    log_action,
+    log_insight,
+    load_pending,
+)
 from .state import resolve_pending as _resolve
 
 mcp = FastMCP("brain-actuator")
@@ -297,6 +304,30 @@ def defer(tty: str, kind: str, summary: str,
     )
     _record("defer", tty, {"kind": kind, "summary": summary}, summary, "deferred")
     return f"📌 保留リストに追加しました: {item_id}"
+
+
+@mcp.tool()
+def record_insight(text: str) -> str:
+    """巡回の最後に、自分の過去判断の振り返りを1つ記録する(1サイクル1件)。
+
+    verify結果(特にgit_progress)と自分の判断を見比べ、「間違っていたこと・
+    次に変えること」を優先して書く。次回以降の巡回プロンプトに直近の学びが
+    注入され、同じ間違いを繰り返さないための自己改善ループになる。
+
+    Args:
+        text: 学び(例:「完了報告セッションへの汎用的な改善指示は不発が多い。
+              screen_tailから具体的な粗を1つ挙げる形に変える」)
+    """
+    text = " ".join(text.split())
+    if not text:
+        return "❌ 拒否: 空の学びは記録できません"
+    if len(text) > 500:
+        return "❌ 拒否: 500文字までに要約してください"
+    if has_insight_for_cycle(CYCLE_ID):
+        return "❌ 拒否: このサイクルでは既に記録済み(1サイクル1件)"
+    log_insight(text, CYCLE_ID)
+    _record("record_insight", "-", {}, text[:80], "recorded")
+    return "📝 学びを記録しました(次回巡回のプロンプトに注入されます)"
 
 
 @mcp.tool()

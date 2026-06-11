@@ -51,6 +51,7 @@ ACTUATOR_TOOLS = [
     "mcp__brain-actuator__act_resume",
     "mcp__brain-actuator__defer",
     "mcp__brain-actuator__resolve_pending",
+    "mcp__brain-actuator__record_insight",
 ]
 LINE_TOOLS = ["mcp__line-bridge__send_text"]
 
@@ -265,13 +266,18 @@ def run_cycle(force: bool = False, dry_run: bool = False, model: str = "sonnet")
         pending = [i for i in load_pending().get("items", []) if i["status"] == "open"]
         recent = [
             {k: r.get(k) for k in ("ts", "cycle_id", "tool", "tty", "reason",
-                                   "result", "target_tool", "target_ts")}
+                                   "result", "target_tool", "target_ts",
+                                   "git_progress")}
             for r in read_actions(hours=24)
         ]
+        # 脳の過去の学び(Lv70): 直近3件をプロンプトに注入(同じ間違いを繰り返さない)
+        from .state import read_insights
+        insights = read_insights(limit=3)
         incidents = recent_incidents(hours=24)
         prompt = build_brain_prompt(snapshot, pending, recent, slot,
                                     dry_run=dry_run, review=review_note,
-                                    incidents=incidents, weekly=weekly)
+                                    incidents=incidents, weekly=weekly,
+                                    insights=insights)
 
         print(f"🧠 {slot} 巡回開始 cycle={cycle_id} タブ{snapshot['totals']['tabs']} "
               f"(dry_run={dry_run}, model={model})", file=sys.stderr)

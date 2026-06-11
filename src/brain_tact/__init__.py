@@ -20,6 +20,7 @@ LATEST_JSON = STATE_DIR / "latest.json"
 PENDING_JSON = STATE_DIR / "pending.json"
 ACTIONS_LOG = STATE_DIR / "actions.log"
 CYCLE_LOG = STATE_DIR / "cycle.log"
+INSIGHTS_LOG = STATE_DIR / "insights.jsonl"  # 脳の自己評価(Lv70・ローテ対象外)
 INCIDENTS_LOG = STATE_DIR / "incidents.log"  # 障害記録(LINEには流さずダッシュボード/翌朝要約へ)
 LOCK_FILE = STATE_DIR / "cycle.lock"
 LAST_SUCCESS = STATE_DIR / "last_success"

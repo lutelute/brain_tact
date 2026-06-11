@@ -14,6 +14,7 @@ from . import (
     CYCLE_LOG,
     HISTORY_DIR,
     INCIDENTS_LOG,
+    INSIGHTS_LOG,
     LAST_SUCCESS,
     LOCK_FILE,
     PENDING_JSON,
@@ -250,6 +251,36 @@ def prune_history() -> int:
             f.unlink()
             n += 1
     return n
+
+
+# ---------------------------------------------------------------------------
+# insights.jsonl — 脳の自己評価の蓄積(Lv70)
+# ---------------------------------------------------------------------------
+
+def log_insight(text: str, cycle_id: str) -> None:
+    """脳の自己評価(判断の間違い・学び)を1件追記する。"""
+    ensure_dirs()
+    with open(INSIGHTS_LOG, "a") as f:
+        f.write(json.dumps({"ts": _now_iso(), "cycle_id": cycle_id,
+                            "text": text}, ensure_ascii=False) + "\n")
+
+
+def read_insights(limit: int = 3) -> list[dict]:
+    """直近limit件の自己評価(新しい順)。次サイクルのプロンプトに注入される。"""
+    if not INSIGHTS_LOG.exists():
+        return []
+    out = []
+    for line in INSIGHTS_LOG.read_text().splitlines():
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return list(reversed(out[-limit:]))
+
+
+def has_insight_for_cycle(cycle_id: str) -> bool:
+    """このサイクルで既に自己評価を記録済みか(1サイクル1件の強制用)。"""
+    return any(r.get("cycle_id") == cycle_id for r in read_insights(limit=20))
 
 
 def rotate_logs() -> int:

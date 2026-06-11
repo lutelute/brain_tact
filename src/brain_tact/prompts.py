@@ -63,11 +63,20 @@ def build_brain_prompt(
     review: dict | None = None,
     incidents: list[dict] | None = None,
     weekly: str | None = None,
+    insights: list[dict] | None = None,
 ) -> str:
     s = SLOTS[slot]
     now = datetime.now()
     review_json = (json.dumps(review, ensure_ascii=False, indent=1)
                    if review else "(今回の読書係レポートはなし)")
+    insights_block = ""
+    if insights:
+        items = "\n".join(f"- [{i.get('ts', '')[:10]}] {i.get('text', '')}"
+                          for i in insights)
+        insights_block = f"""
+## データ6: あなた自身の過去の学び(直近{len(insights)}件 — 同じ間違いを繰り返さない)
+{items}
+"""
     weekly_block = ""
     if weekly:
         weekly_block = f"""
@@ -82,14 +91,14 @@ def build_brain_prompt(
                      if incidents else "")
     if dry_run:
         report_step = (
-            "7. LINE送信ツールは今回はありません。代わりにLINEレポートの本文を"
+            "8. LINE送信ツールは今回はありません。代わりにLINEレポートの本文を"
             "最終出力の末尾にそのまま含めてください。\n"
-            "【重要】act_send / act_approve / act_resume / defer / resolve_pending は"
-            "通常巡回と同様に必ず実際にツールとして呼び出すこと。実送信の抑止は"
-            "システム側が行うため、あなたが呼び出しを省略してはいけない"
+            "【重要】act_send / act_approve / act_resume / defer / resolve_pending / "
+            "record_insight は通常巡回と同様に必ず実際にツールとして呼び出すこと。"
+            "実送信の抑止はシステム側が行うため、あなたが呼び出しを省略してはいけない"
         )
     else:
-        report_step = "7. 最後に line-bridge の send_text で報告を1回送る"
+        report_step = "8. 最後に line-bridge の send_text で報告を1回送る"
     return f"""あなたは「brain」— ユーザーのMac上で並行稼働する多数のClaude Codeセッションを監督する管理者AIです。いまは{s["desc"]}の定期巡回です。
 
 ## あなたの役割(批判的改善ファースト)
@@ -139,6 +148,7 @@ def build_brain_prompt(
 4. 【ループ駆動】放置(resumable)には act_send で「プロジェクトを批判的に自己レビューし、最も価値の高い改善を実行し、それを繰り返せ」と促す。active/RUNNING(jsonl_age<60含む)は作業中なので触らない
 5. 介入(act_send/act_approve/act_resume)には必ず具体的な reason を付ける。**「閉じて」「締めて」は絶対に送らない**(/clearは満杯時の標準手順の一部としてのみ可)
 6. データ1のopen保留で解消済みは resolve_pending、新たに判断が要るものは defer(kind: approval/question/stalled/dead/limit/other、suggested_actions付き)
+7. 【自己評価】データ2のverify結果(git_progress含む)とデータ6の過去の学びを見比べ、自分の判断の間違い・次に変えることを1つ record_insight で記録する(うまくいった自慢ではなく「変えること」を優先。データ6と同じ内容の繰り返しは不可)
 {report_step}
 
 ## LINEレポート形式(プレーンテキスト、改善を先頭に)
@@ -180,4 +190,4 @@ usage.pct >= 50 または不明(null)のときは守りの運用(従来通り)�
 ```json
 {review_json}
 ```
-{weekly_block}"""
+{insights_block}{weekly_block}"""
