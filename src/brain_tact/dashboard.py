@@ -116,6 +116,14 @@ button:disabled{opacity:.5;cursor:default}
   background:#2a2e36;border:1px solid #3a4150;padding:10px 16px;border-radius:8px;
   opacity:0;transition:.3s;pointer-events:none}
 #toast.show{opacity:1}
+#sendbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:10;
+  background:#1d2128;border-top:1px solid #2d6a4f;padding:10px 18px;
+  gap:10px;align-items:center}
+#sendbar.open{display:flex}
+#sb-msg{flex:1;background:#14161a;border:1px solid #343a44;border-radius:6px;
+  color:#e6e8eb;padding:7px 10px;font-size:13px}
+#sb-msg:focus{outline:1px solid #2d6a4f}
+#sb-target{color:#9fe6c4}
 </style></head>
 <body>
 <header>
@@ -144,6 +152,12 @@ button:disabled{opacity:.5;cursor:default}
     <div id="all"></div>
   </div>
 </div>
+<div id="sendbar">
+  <span>→ <b id="sb-target"></b></span>
+  <input id="sb-msg" placeholder="指示を入力して⏎ (Escで閉じる)">
+  <button class="btn" id="sb-send">送信</button>
+  <button class="btn ghost" id="sb-close">✕</button>
+</div>
 <div id="toast"></div>
 <script>
 const CAT={closeable:'要改善',needs_handover:'満杯',needs_user:'要判断',
@@ -159,11 +173,31 @@ async function act(p){
     headers:{'Content-Type':'application/json','X-Brain-Token':TOKEN},
     body:JSON.stringify(p)});
   const j=await r.json();toast(j.result||j.error||'done');setTimeout(refresh,800)}
-// 任意指示(prompt入力)
+// 任意指示 — インライン入力バー(Electronはwindow.prompt非対応のため)
+let SENDTO=null;
 function sendTo(tty,proj){
-  const m=prompt('「'+(proj||tty)+'」に送る指示を入力:','');
-  if(m===null||m.trim()==='')return;
-  act({tool:'act_send',tty:tty,message:m.trim(),reason:'dashboard手動指示'})}
+  SENDTO=tty;
+  document.getElementById('sb-target').textContent=proj||tty;
+  document.getElementById('sendbar').classList.add('open');
+  document.getElementById('sb-msg').focus();
+}
+function sbClose(){SENDTO=null;
+  document.getElementById('sendbar').classList.remove('open');
+  document.getElementById('sb-msg').value=''}
+function sbSend(){
+  const m=document.getElementById('sb-msg').value;
+  if(!SENDTO||!m.trim())return;
+  act({tool:'act_send',tty:SENDTO,message:m.trim(),reason:'dashboard手動指示'});
+  sbClose();
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('sb-send').onclick=sbSend;
+  document.getElementById('sb-close').onclick=sbClose;
+  document.getElementById('sb-msg').addEventListener('keydown',e=>{
+    if(e.key==='Enter')sbSend();
+    if(e.key==='Escape')sbClose();
+  });
+});
 // data属性ボタン群(JSONを属性に埋めない=日本語/引用符で壊れない)
 function btns(tty,proj,cat){
   const CRIT="自分のプロジェクトを批判的に自己レビューし(完了と思っても必ず粗・改善余地を探す)、最も価値の高い改善を1つ実行して、改善ループを続けてください。閉じないこと。";
@@ -285,7 +319,9 @@ header{padding:7px 10px;background:#1b1e24;border-bottom:1px solid #2a2e36;
 .x:hover{color:#e6e8eb}
 .list{overflow-y:auto;flex:1;padding:5px}
 .row{display:flex;gap:7px;padding:4px 7px;border-radius:6px;margin-bottom:3px;
-  background:#1b1e24;align-items:center}
+  background:#1b1e24;align-items:center;cursor:pointer}
+.row:hover{background:#22262e}
+.row.sel{outline:1px solid #2d6a4f;background:#1d2a24}
 .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .d-needs_user{background:#f0a0a0}
 .d-needs_handover{background:#f0d98a}
@@ -305,7 +341,21 @@ footer{padding:6px 10px;background:#1b1e24;border-top:1px solid #2a2e36;
 .btn{background:#343a44;color:#e6e8eb;border:0;border-radius:5px;
   padding:3px 8px;font-size:11px;cursor:pointer}
 .btn:hover{background:#3f4651}
+.btn.go{background:#2d6a4f}.btn.go:hover{background:#358460}
 a{color:#8fb8e6;text-decoration:none;font-size:11px}
+#bar{display:none;flex-direction:column;gap:5px;padding:7px 10px;
+  background:#1d2128;border-top:1px solid #2d6a4f;flex-shrink:0}
+.bar-head{display:flex;align-items:center;gap:6px;font-size:11px}
+.bar-head b{color:#9fe6c4}
+.bar-row{display:flex;gap:5px}
+#bmsg{flex:1;background:#14161a;border:1px solid #343a44;border-radius:5px;
+  color:#e6e8eb;padding:4px 7px;font-size:12px}
+#bmsg:focus{outline:1px solid #2d6a4f}
+#toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);
+  background:#2a2e36;border:1px solid #3a4150;padding:5px 12px;border-radius:6px;
+  font-size:11px;opacity:0;transition:.3s;pointer-events:none;max-width:90%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#toast.show{opacity:1}
 </style></head>
 <body>
 <header>
@@ -314,6 +364,21 @@ a{color:#8fb8e6;text-decoration:none;font-size:11px}
   <button class="x" onclick="window.close()" title="隠す">✕</button>
 </header>
 <div class="list" id="list"></div>
+<div id="bar">
+  <div class="bar-head">→ <b id="btarget"></b>
+    <span class="spacer"></span>
+    <button class="x" id="bclose" title="閉じる">✕</button></div>
+  <div class="bar-row">
+    <input id="bmsg" placeholder="指示を入力して⏎">
+    <button class="btn go" id="bsend">送信</button>
+  </div>
+  <div class="bar-row">
+    <button class="btn" id="bcrit" title="批判的改善ループの定型指示">🔬 改善</button>
+    <button class="btn" id="bsave" title="コミットで保全の定型指示">💾 保全</button>
+    <button class="btn" id="bok" style="display:none" title="承認プロンプトに1">✓ 承認1</button>
+  </div>
+</div>
+<div id="toast"></div>
 <footer>
   <span class="pend" id="pend"></span>
   <span class="spacer"></span>
@@ -324,22 +389,73 @@ a{color:#8fb8e6;text-decoration:none;font-size:11px}
 <script>
 const TOKEN='__BRAIN_TOKEN__';
 const ORDER={needs_user:0,needs_handover:1,closeable:2,resumable:3,active:4,ignored:5};
+const CRIT="自分のプロジェクトを批判的に自己レビューし(完了と思っても必ず粗・改善余地を探す)、最も価値の高い改善を1つ実行して、改善ループを続けてください。改善は検証可能に(テスト・実行確認を通し、論理単位でコミットして締める)。閉じないこと。";
+const SAVE="未コミットの変更をコミットして成果を保全してから、批判的に次の改善を続けてください。閉じないこと。";
+let SEL=null;  // {tty, proj, cat}
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500)}
 function render(d){
   document.getElementById('hl').textContent=d.headline||'';
   document.getElementById('t').textContent=(d.taken_at||'').slice(11,16);
   const ss=(d.sessions||[]).slice().sort((a,b)=>
     (ORDER[a.cleanup.category]??9)-(ORDER[b.cleanup.category]??9));
   document.getElementById('list').innerHTML=ss.map(s=>
-    `<div class="row" title="${esc(s.tty+' '+s.state_hint+' — '+s.cleanup.reason)}">
+    `<div class="row${SEL&&SEL.tty===s.tty?' sel':''}" data-tty="${s.tty}"
+      data-proj="${esc(s.project||'')}" data-cat="${s.cleanup.category}"
+      title="${esc(s.tty+' '+s.state_hint+' — '+s.cleanup.reason)}">
      <span class="dot d-${s.cleanup.category}"></span>
      <span class="proj">${esc(s.project||'-')}</span>
      <span class="why">${esc(s.cleanup.reason)}</span></div>`).join('')
     ||'<div class="empty">セッションなし</div>';
   const n=(d.pending||[]).length;
   document.getElementById('pend').textContent=n?`⏸ 保留${n}`:'';
+  // 選択していたセッションが消えたらバーを閉じる
+  if(SEL&&!ss.some(s=>s.tty===SEL.tty))closeBar();
 }
 new EventSource('/events').onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}};
+// --- 行選択 → 操作バー(Electronはwindow.prompt非対応のためインライン入力) ---
+const bar=document.getElementById('bar'),bmsg=document.getElementById('bmsg');
+function openBar(sel){
+  SEL=sel;
+  document.getElementById('btarget').textContent=sel.proj||sel.tty;
+  document.getElementById('bok').style.display=
+    sel.cat==='needs_user'?'':'none';
+  bar.style.display='flex';
+  document.querySelectorAll('.row').forEach(r=>
+    r.classList.toggle('sel',r.dataset.tty===sel.tty));
+  bmsg.focus();
+}
+function closeBar(){SEL=null;bar.style.display='none';bmsg.value='';
+  document.querySelectorAll('.row.sel').forEach(r=>r.classList.remove('sel'))}
+document.getElementById('list').addEventListener('click',e=>{
+  const r=e.target.closest('.row');if(!r||!r.dataset.tty)return;
+  if(r.dataset.cat==='ignored'){toast('claude未起動(対象外)');return}
+  if(SEL&&SEL.tty===r.dataset.tty){closeBar();return}
+  openBar({tty:r.dataset.tty,proj:r.dataset.proj,cat:r.dataset.cat});
+});
+document.getElementById('bclose').onclick=closeBar;
+async function act(p){
+  toast('送信中…');
+  try{
+    const r=await fetch('/api/act',{method:'POST',
+      headers:{'Content-Type':'application/json','X-Brain-Token':TOKEN},
+      body:JSON.stringify(p)});
+    const j=await r.json();toast(j.result||j.error||'done');
+  }catch(_){toast('通信エラー')}
+}
+function sendMsg(text){
+  if(!SEL||!text.trim())return;
+  act({tool:'act_send',tty:SEL.tty,message:text.trim(),reason:'ミニ監視から手動指示'});
+  bmsg.value='';
+}
+document.getElementById('bsend').onclick=()=>sendMsg(bmsg.value);
+bmsg.addEventListener('keydown',e=>{if(e.key==='Enter')sendMsg(bmsg.value);
+  if(e.key==='Escape')closeBar()});
+document.getElementById('bcrit').onclick=()=>sendMsg(CRIT);
+document.getElementById('bsave').onclick=()=>sendMsg(SAVE);
+document.getElementById('bok').onclick=()=>{if(SEL)
+  act({tool:'act_approve',tty:SEL.tty,option:'1',reason:'ミニ監視から手動承認'})};
 function rescan(){fetch('/api/scan',{method:'POST',
   headers:{'X-Brain-Token':TOKEN},body:'{}'}).catch(()=>{})}
 document.getElementById('rescan').onclick=rescan;

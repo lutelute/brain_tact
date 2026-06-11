@@ -96,3 +96,21 @@ class TestMiniPage:
                 f"http://127.0.0.1:{server}/", timeout=10) as r:
             html = r.read().decode()
         assert 'id="rescan"' in html  # フル版にも再スキャンボタン
+
+
+class TestMiniActions:
+    def test_mini_has_action_bar(self, server):
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{server}/mini", timeout=10) as r:
+            html = r.read().decode()
+        for el in ('id="bar"', 'id="bmsg"', 'id="bcrit"', 'id="bok"',
+                   "act_send", "act_approve"):
+            assert el in html, el
+
+    def test_full_page_uses_inline_sendbar_not_prompt(self, server):
+        """Electronはwindow.prompt非対応 — prompt()依存が無いことを固定。"""
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{server}/", timeout=10) as r:
+            html = r.read().decode()
+        assert 'id="sendbar"' in html
+        assert "=prompt(" not in html
