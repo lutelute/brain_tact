@@ -87,9 +87,14 @@ def judge_session(rec: dict) -> dict:
         return _j(ACTIVE, "作業中", "触らない")
 
     # --- コンテキスト満杯(最優先の掃除対象) ------------------------------
+    # 満杯のClaudeは /clear を自律実行できない(ユーザーの手動キー操作が必須)。
+    # 脳はテキストで /clear を送っても無意味(事故ループ化)。dirty>0なら成果保全の
+    # コミットだけ促し、/clear自体はユーザーに委ねる(行動規範16・prompts.py)。
     if context_full:
+        commit_first = ("未コミットをコミットで保全してから "
+                        if isinstance(dirty, int) and dirty > 0 else "")
         return _j(NEEDS_HANDOVER, "コンテキストがほぼ満杯",
-                  "引き継ぎ保存(/引き継ぎ)してから /clear で再開",
+                  f"{commit_first}ユーザーが手動で /clear か /compact(脳は代行できない)",
                   handover=True)
 
     # --- IDLE の掃除判定 --------------------------------------------------

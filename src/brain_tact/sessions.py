@@ -52,6 +52,44 @@ def read_last_assistant_text(jsonl_path: str, max_chars: int = 240) -> str | Non
     return None
 
 
+def read_context_tokens(jsonl_path: str) -> int | None:
+    """jsonl末尾の最新assistant usageから、現在コンテキストに載っている総トークンを返す。
+
+    総量 = input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+    (output_tokensは含めない — 次ターンでinput/cacheに転写される)。満杯(context_full)に
+    なる前にコンテキスト圧迫を数値で把握するための予兆シグナル。確定的な満杯判定は
+    画面の context_full(new task?/clear) を引き続き使う(モデル上限がjsonlから判別できず
+    =200k版か1M版か不明=絶対量だけでは満杯到達を断定できないため)。
+    """
+    try:
+        with open(jsonl_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - TAIL_READ_BYTES))
+            chunk = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    lines = chunk.splitlines()
+    if size > TAIL_READ_BYTES and lines:
+        lines = lines[1:]  # 先頭行は途中から始まっている可能性があるため捨てる
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") != "assistant":
+            continue
+        usage = (rec.get("message") or {}).get("usage") or {}
+        if not usage:
+            continue
+        total = (usage.get("input_tokens", 0)
+                 + usage.get("cache_creation_input_tokens", 0)
+                 + usage.get("cache_read_input_tokens", 0))
+        if total > 0:
+            return total
+    return None
+
+
 @dataclass
 class SessionInfo:
     jsonl_path: str | None
@@ -59,6 +97,7 @@ class SessionInfo:
     mtime: float | None
     age_min: float | None    # 最終活動からの経過分
     ambiguous: bool          # 同一cwdに複数claudeが居て対応が不確実
+    context_tokens: int | None = None  # 現在コンテキストに載っている総トークン(満杯の予兆把握)
 
 
 def path_slug(cwd: str) -> str:
@@ -104,6 +143,7 @@ def attach_sessions(procs: dict[str, ClaudeProc]) -> dict[str, SessionInfo]:
                 mtime=mtime,
                 age_min=(now - mtime) / 60,
                 ambiguous=False,
+                context_tokens=read_context_tokens(str(chosen)),
             )
         else:
             # 複数プロセス共有cwd: 上位n_here本のmtime最大を共有シグナルとする

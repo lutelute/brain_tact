@@ -2,7 +2,7 @@
 
 ガードレールはプロンプトのお願いではなく、ここでコードとして強制する:
 - act_send: 対象ttyにclaudeが居ることを確認(シェルへのコマンド誤爆防止)、
-  同一tty 6時間1回、禁止語句拒否、1サイクル合計15アクション
+  同一tty 6時間1回、禁止語句拒否(危険コマンド+セッション終了誘導)、1サイクル合計15アクション
 - act_approve: 選択肢番号のみ、1セッション3回/サイクル
 - act_resume: claudeが居ないことを確認してから復元コマンド送信、12時間1回
 - kill・タブ閉じに相当するツールは存在しない(構造的に不可能)
@@ -36,14 +36,58 @@ mcp = FastMCP("brain-actuator")
 CYCLE_ID = os.environ.get("BRAIN_CYCLE_ID", "manual")
 DRY_RUN = os.environ.get("BRAIN_DRY_RUN", "") == "1"
 
-# 脳がセッションに送るメッセージに含まれていたら拒否する語句
+# 脳がセッションに送るメッセージに含まれていたら拒否する語句(危険コマンド)
 FORBIDDEN_RE = re.compile(
     r"rm\s+-rf|sudo\s|--force|force[- ]push|git\s+push\s+-f|kill\s|pkill|"
     r"shutdown|reboot|mkfs|dd\s+if=|>\s*/dev/",
     re.IGNORECASE,
 )
 
+# セッションを終わらせる方向に導く誘導(脳の自動送信では拒否する)。
+# 「閉じさせない」は最優先の不変条件だが、プロンプトのお願いだけでは
+# 2026-06-09に脳が「閉じてOK/締めてOK/お疲れさま」を大量送信して破った実績がある。
+# そのためコードで強制する。誤爆を避けるため「終了の許可(OK/大丈夫等)を伴う形」や
+# 「セッション/タブを閉じる」明示パターンに限定し、「コミットして締めてください」
+# 「テストを通して締めてください」等の作業の締めは通す。
+CLOSE_FORBIDDEN_RE = re.compile(
+    r"閉じて\s*(OK|よい|いい|ください|大丈夫|構わ|問題ない|も(?:OK|大丈夫|いい|構わ))"
+    r"|閉じても\s*(?:OK|大丈夫|いい|構わ|問題ない)"
+    r"|タブを閉じ|セッションを\s*(?:閉じ|終え|終了|締め|畳)"
+    r"|締めて\s*(OK|大丈夫|構わ|問題ない|よい|いいです|いい$)"
+    r"|終わりに\s*(?:して|しま|しよう)|作業を\s*(?:終え|終了|畳)"
+    r"|一区切りなら\s*(?:閉じ|締め)",
+    re.IGNORECASE,
+)
+
+# コンテキスト操作・skill発動系スラッシュコマンド(脳の自動送信では拒否)。
+# 満杯のClaudeはこれらを自律実行できず(ユーザーの手動キー操作が必須)、送っても無意味で
+# 毎巡回同じ指示を繰り返す事故ループの原因。進行中のskillの文脈も壊す。賢いセッションの
+# 判断に任せ、満杯など物理的に動けないものは defer でユーザーに委ねる(prompts.pyの役割定義と一致)。
+CONTEXT_CMD_RE = re.compile(
+    r"/clear\b|/compact\b|/引き継ぎ|/handover\b|コンテキストを圧縮",
+    re.IGNORECASE,
+)
+
 VALID_KINDS = {"approval", "question", "stalled", "dead", "limit", "other"}
+
+
+def forbidden_reason(message: str, manual: bool = False) -> str | None:
+    """送信を拒否すべきメッセージなら理由文字列を返す(OKならNone)。純関数。
+
+    - 危険コマンド(rm -rf/sudo/push -f 等): シェル誤爆・破壊防止。manual でも拒否。
+    - セッション終了誘導(閉じて/締めてOK 等): 「閉じさせない」不変条件のコード強制。
+      manual=True(ユーザー自身の手動操作)は終了誘導を許可する(本人の判断)。
+    """
+    if FORBIDDEN_RE.search(message):
+        return "危険語句(rm -rf/sudo/push -f 等)を含む。defer してユーザーに委ねること"
+    if not manual and CLOSE_FORBIDDEN_RE.search(message):
+        return ("セッションを終わらせる誘導(閉じて/締めてOK 等)を含む。セッションは"
+                "閉じさせない — 次の改善ステップを促すか、判断が要るなら defer すること")
+    if not manual and CONTEXT_CMD_RE.search(message):
+        return ("/clear・/compact・/引き継ぎ 等のコンテキスト操作コマンドを含む。満杯の"
+                "Claudeはこれらを自律実行できず無意味(事故ループの原因)。賢いセッションの"
+                "判断に任せ、物理的に動けないものは defer でユーザーに委ねること")
+    return None
 
 
 def _send_to_tab(tty: str, command: str) -> bool:
@@ -217,9 +261,10 @@ def run_cycle_now(dry_run: bool = True) -> str:
 
 def send_impl(tty: str, message: str, reason: str, manual: bool = False) -> str:
     message = " ".join(message.split())  # 改行・連続空白を畳む
-    if FORBIDDEN_RE.search(message):
-        _record("act_send", tty, {"text": message}, reason, "rejected: forbidden phrase")
-        return "❌ 拒否: メッセージに危険語句が含まれています。defer してユーザーに委ねること"
+    why = forbidden_reason(message, manual=manual)
+    if why:
+        _record("act_send", tty, {"text": message[:120]}, reason, f"rejected: {why[:48]}")
+        return f"❌ 拒否: {why}"
     if len(message) > 500:
         _record("act_send", tty, {"text": message[:100]}, reason, "rejected: too long")
         return "❌ 拒否: メッセージが長すぎます(500文字まで)"
