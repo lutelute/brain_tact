@@ -27,6 +27,18 @@ SKILL_DST = Path.home() / ".claude" / "skills" / "brain" / "SKILL.md"
 DASHBOARD_URL = "http://127.0.0.1:8787/api/state"
 
 
+def precompact_block_enabled(settings: dict) -> bool:
+    """settingsにauto-compact(matcher=auto)を止めるPreCompact hookがあるか(純関数)。
+
+    ユーザーがsettings.jsonに登録する任意設定。brain_tactは登録を代行せず(ユーザーの
+    領分)、設定状態の可視化(doctor)と設定スニペットの案内のみ行う。
+    """
+    for entry in (settings.get("hooks") or {}).get("PreCompact") or []:
+        if entry.get("matcher") == "auto" and entry.get("hooks"):
+            return True
+    return False
+
+
 def _check(name: str, fn) -> dict:
     try:
         ok, detail = fn()
@@ -169,6 +181,21 @@ def run_doctor() -> list[dict]:
             pass
         return True, "書き込み可"
     checks.append(_check("actions.log", actions_log_writable))
+
+    def precompact_block():
+        # auto-compactブロックは任意設定。未設定でも問題視せず(ok=True)状態を示すだけ。
+        sp = Path.home() / ".claude" / "settings.json"
+        if not sp.exists():
+            return True, "settings.json無し → 未設定(任意)"
+        try:
+            data = json.loads(sp.read_text())
+        except (json.JSONDecodeError, OSError) as e:
+            return True, f"settings.json読めず → 状態不明({str(e)[:40]})"
+        if precompact_block_enabled(data):
+            return True, "有効(PreCompact matcher=auto) — 勝手な自動圧縮を防止中"
+        return True, ("未設定(任意) — 有効化は settings.json の hooks に "
+                      "PreCompact[matcher=auto → exit 2] を追加")
+    checks.append(_check("auto-compactブロック", precompact_block))
 
     return checks
 
